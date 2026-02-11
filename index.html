@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>不老松中清店無法排班表 V1.1</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f1f5f9;
+        }
+
+        @media print {
+            @page { size: A4 portrait; margin: 0.2cm; }
+            body { background: white; -webkit-print-color-adjust: exact; }
+            tr { page-break-inside: avoid; height: 23px !important; }
+            .print-area { width: 100% !important; border: 2px solid black !important; margin: 0 !important; }
+            .print-hidden { display: none !important; }
+            input { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
+            nav, footer, .control-btn, .stat-box { display: none !important; }
+            .slot-input { font-size: 13px !important; line-height: 1 !important; height: 20px !important; width: 100% !important; }
+            .header-info { padding: 2px !important; }
+            table { width: 100% !important; table-layout: fixed; }
+        }
+
+        .slot-input:focus {
+            background-color: #e2e8f0;
+            outline: none;
+        }
+
+        .control-btn {
+            opacity: 0.2;
+            transition: all 0.1s;
+        }
+        
+        td:hover .control-btn {
+            opacity: 1;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+
+        .category-tag {
+            font-size: 10px;
+            padding: 1px 4px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        // 初始國定假日資料
+        const INITIAL_HOLIDAYS = [
+            { date: "2026-01-01", name: "元旦" },
+            { date: "2026-01-28", name: "除夕" },
+            { date: "2026-01-29", name: "春節初一" },
+            { date: "2026-01-30", name: "春節初二" },
+            { date: "2026-01-31", name: "春節初三" },
+            { date: "2026-02-01", name: "春節初四" },
+            { date: "2026-02-02", name: "春節初五" },
+            { date: "2026-02-28", name: "和平紀念日" },
+            { date: "2026-04-04", name: "兒童節" },
+            { date: "2026-04-05", name: "清明節" },
+            { date: "2026-06-19", name: "端午節" },
+            { date: "2026-09-25", name: "中秋節" },
+            { date: "2026-10-10", name: "國慶日" }
+        ];
+
+        // 師傅配色資料 (V1.1 固定數據)
+        const INITIAL_COLORS = {
+            "05": "#3B82F6", "58": "#3B82F6", "69": "#3B82F6",
+            "03": "#EF4444", "06": "#EF4444", "07": "#EF4444", "11": "#EF4444", "18": "#EF4444", 
+            "20": "#EF4444", "27": "#EF4444", "32": "#EF4444", "33": "#EF4444", "35": "#EF4444", 
+            "37": "#EF4444", "39": "#EF4444", "57": "#EF4444", "60": "#EF4444", "62": "#EF4444", 
+            "65": "#EF4444", "66": "#EF4444", "68": "#EF4444", "76": "#EF4444", "77": "#EF4444", 
+            "80": "#EF4444", "88": "#EF4444", "89": "#EF4444", "90": "#EF4444",
+            "02": "#000000", "08": "#000000", "09": "#000000", "10": "#000000", "16": "#000000", 
+            "17": "#000000", "22": "#000000", "25": "#000000", "28": "#000000", "30": "#000000", 
+            "31": "#000000", "38": "#000000", "52": "#000000", "53": "#000000", "55": "#000000", 
+            "59": "#000000", "67": "#000000", "70": "#000000", "79": "#000000", "81": "#000000", 
+            "82": "#000000", "83": "#000000", "86": "#000000", "91": "#000000", "93": "#000000", 
+            "96": "#000000", "97": "#000000", "98": "#000000", "99": "#000000", "100": "#000000", "101": "#000000"
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('B');
+            const [year, setYear] = useState(2026);
+            const [month, setMonth] = useState(2);
+            const [colorMap, setColorMap] = useState(INITIAL_COLORS);
+            const [holidays, setHolidays] = useState(INITIAL_HOLIDAYS);
+            const [scheduleData, setScheduleData] = useState({});
+
+            const [newHoliday, setNewHoliday] = useState({ date: "", name: "" });
+
+            const daysInMonth = useMemo(() => {
+                const days = [];
+                const date = new Date(year, month - 1, 1);
+                while (date.getMonth() === month - 1) {
+                    const dateString = `${year}-${String(month).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+                    const dayOfWeek = date.getDay();
+                    days.push({
+                        day: date.getDate(),
+                        weekday: ['日', '一', '二', '三', '四', '五', '六'][dayOfWeek],
+                        isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
+                        dateString: dateString
+                    });
+                    date.setDate(date.getDate() + 1);
+                }
+                return days;
+            }, [year, month]);
+
+            // 精簡版統計計算 (僅保留未排號碼)
+            const stats = useMemo(() => {
+                const allEntries = Object.values(scheduleData).flat().map(v => v.trim()).filter(Boolean);
+                const uniqueUsedIds = new Set(allEntries);
+                const masterIds = Object.keys(colorMap);
+                const missingIds = masterIds.filter(id => !uniqueUsedIds.has(id)).sort((a, b) => parseInt(a) - parseInt(b));
+                
+                // 師傅分組計數 (僅用於面板 C 顯示)
+                const mastersByCategory = {
+                    male: masterIds.filter(id => colorMap[id] === "#000000").length,
+                    female: masterIds.filter(id => colorMap[id] === "#EF4444").length,
+                    full: masterIds.filter(id => colorMap[id] === "#3B82F6").length
+                };
+
+                return {
+                    missingIds,
+                    totalMasters: masterIds.length,
+                    mastersByCategory
+                };
+            }, [scheduleData, colorMap]);
+
+            const handleCellChange = (day, shift, index, value) => {
+                const key = `${day}-${shift}`;
+                const currentSlots = scheduleData[key] || Array(8).fill('');
+                const newSlots = [...currentSlots];
+                newSlots[index] = value;
+                setScheduleData({ ...scheduleData, [key]: newSlots });
+            };
+
+            const addSlot = (day, shift) => {
+                const key = `${day}-${shift}`;
+                const currentSlots = scheduleData[key] || Array(8).fill('');
+                setScheduleData({ ...scheduleData, [key]: [...currentSlots, ''] });
+            };
+
+            const removeLastSlot = (day, shift) => {
+                const key = `${day}-${shift}`;
+                const currentSlots = scheduleData[key] || Array(8).fill('');
+                if (currentSlots.length > 1) {
+                    setScheduleData({ ...scheduleData, [key]: currentSlots.slice(0, -1) });
+                }
+            };
+
+            const sortedColors = useMemo(() => {
+                return Object.entries(colorMap).sort((a, b) => (parseInt(a[0]) || 0) - (parseInt(b[0]) || 0));
+            }, [colorMap]);
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b">
+                        <div className="flex items-center gap-4">
+                            <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase">不老松中清店</h1>
+                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
+                                <button onClick={() => setActiveTab('A')} className={`px-4 py-1.5 rounded ${activeTab === 'A' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>國定假日</button>
+                                <button onClick={() => setActiveTab('B')} className={`px-4 py-1.5 rounded ${activeTab === 'B' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>排版主表</button>
+                                <button onClick={() => setActiveTab('C')} className={`px-4 py-1.5 rounded ${activeTab === 'C' ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}>師傅顏色</button>
+                            </div>
+                        </div>
+                        <div className="text-xs font-bold text-slate-400 font-mono">{year} / {String(month).padStart(2, '0')}</div>
+                    </nav>
+
+                    <main className="flex-1 max-w-7xl mx-auto w-full p-4 mb-10">
+                        {/* 面板 A: 國定假日 */}
+                        {activeTab === 'A' && (
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                <h2 className="text-xl font-bold mb-4">國定假日管理系統</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="bg-slate-50 p-4 rounded-lg border">
+                                        <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase">新增/編輯假日</h3>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-400 mb-1">節日名稱</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={newHoliday.name}
+                                                    onChange={e => setNewHoliday({...newHoliday, name: e.target.value})}
+                                                    className="w-full border p-2 rounded outline-none" 
+                                                    placeholder="例如: 清明節" 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-400 mb-1">選擇日期</label>
+                                                <input 
+                                                    type="date" 
+                                                    value={newHoliday.date}
+                                                    onChange={e => setNewHoliday({...newHoliday, date: e.target.value})}
+                                                    className="w-full border p-2 rounded outline-none font-mono" 
+                                                />
+                                            </div>
+                                            <button 
+                                                onClick={() => {
+                                                    if(newHoliday.date && newHoliday.name) {
+                                                        const exists = holidays.find(h => h.date === newHoliday.date);
+                                                        if(exists) {
+                                                            setHolidays(holidays.map(h => h.date === newHoliday.date ? newHoliday : h));
+                                                        } else {
+                                                            setHolidays([...holidays, newHoliday]);
+                                                        }
+                                                        setNewHoliday({ date: "", name: "" });
+                                                    }
+                                                }}
+                                                className="w-full bg-indigo-600 text-white py-2 rounded font-bold shadow-md hover:bg-indigo-700"
+                                            >
+                                                儲存假日資訊
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="max-h-[70vh] overflow-y-auto custom-scrollbar border rounded-lg p-2">
+                                        <p className="text-xs font-bold text-red-500 p-2 border-b">節日清單</p>
+                                        {holidays.sort((a,b) => a.date.localeCompare(b.date)).map(h => (
+                                            <div key={h.date} className="text-sm py-2 px-3 border-b flex justify-between items-center group hover:bg-slate-50">
+                                                <div className="flex gap-4 cursor-pointer" onClick={() => setNewHoliday(h)}>
+                                                    <span className="font-mono font-bold text-slate-600">{h.date}</span>
+                                                    <span className="text-red-500 font-bold">{h.name}</span>
+                                                </div>
+                                                <button onClick={()=>setHolidays(holidays.filter(x=>x.date!==h.date))} className="text-red-300 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 面板 B: 排版主表 */}
+                        {activeTab === 'B' && (
+                            <div className="w-full">
+                                <div className="flex justify-between items-end mb-4 print-hidden">
+                                    <div className="flex-1">
+                                        <h2 className="font-black text-slate-800 text-lg uppercase tracking-wider mb-2">排版主表</h2>
+                                        <div className="bg-amber-50 border border-amber-200 px-4 py-3 rounded shadow-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                                                <span className="text-amber-800 font-bold text-xs uppercase tracking-widest">目前未排號碼盤點</span>
+                                            </div>
+                                            <div className="font-mono text-amber-700 text-sm break-all leading-relaxed">
+                                                {stats.missingIds.join(', ') || '✅ 所有師傅均已排入班表'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="ml-6">
+                                        <button onClick={() => window.print()} className="bg-slate-800 text-white px-8 py-3 rounded-full text-sm font-black shadow-xl hover:bg-slate-900 transition-all active:scale-95">
+                                            列印 A4
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div className="print-area bg-white border-2 border-slate-900 overflow-hidden shadow-2xl mx-auto">
+                                    <div className="flex border-b border-slate-900 font-bold bg-white header-info p-1">
+                                        <div className="w-24 border-r border-slate-900 text-[10px] flex items-center justify-center font-black">不老松中清店</div>
+                                        <div className="flex-1 text-center text-base tracking-[0.2em] font-black uppercase"><span className="text-orange-600">{month}月</span>無法排班表</div>
+                                    </div>
+                                    <table className="w-full border-collapse text-[10px] table-fixed">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-900 font-bold uppercase">
+                                                <th className="border-r border-slate-300 w-8">日</th>
+                                                <th className="border-r border-slate-900 w-12 text-center">週</th>
+                                                <th className="border-r border-slate-300 bg-blue-50 py-0.5 w-[30%]">早班 (08-11)</th>
+                                                <th className="border-r border-slate-300 bg-red-50 py-0.5 w-[30%]">午班 (12-17)</th>
+                                                <th className="bg-green-50 py-0.5 w-[30%]">夜班 (18-20)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {daysInMonth.map((d) => {
+                                                const holiday = holidays.find(h => h.date === d.dateString);
+                                                const isHoliday = !!holiday || d.isWeekend;
+                                                const cellColor = isHoliday ? 'text-red-600' : 'text-slate-800';
+                                                return (
+                                                    <tr key={d.day} className="border-b border-slate-300 h-[24px]">
+                                                        <td className={`border-r border-slate-300 text-center font-black ${cellColor}`}>{d.day}</td>
+                                                        <td className={`border-r-2 border-slate-900 text-center font-bold ${cellColor} flex flex-col justify-center leading-none`}>
+                                                            <div className="text-[10px]">({d.weekday})</div>
+                                                            {holiday && <div className="text-[6px] scale-[0.65] whitespace-nowrap overflow-hidden leading-tight font-black">{holiday.name}</div>}
+                                                        </td>
+                                                        {['early', 'middle', 'late'].map((shift, idx) => {
+                                                            const slots = scheduleData[`${d.day}-${shift}`] || Array(8).fill('');
+                                                            return (
+                                                                <td key={shift} className={`p-0 border-r ${idx === 2 ? 'border-r-0' : 'border-slate-300'} ${shift==='early'?'bg-blue-50/5':shift==='middle'?'bg-red-50/5':'bg-green-50/5'}`}>
+                                                                    <div className="grid grid-cols-8 gap-0 h-full relative group">
+                                                                        {slots.map((val, sIdx) => (
+                                                                            <input 
+                                                                                key={sIdx}
+                                                                                className="w-full h-full text-center font-black text-sm outline-none bg-transparent slot-input border-r border-slate-100 last:border-r-0"
+                                                                                style={{ color: colorMap[val.trim()] || '#000000' }}
+                                                                                value={val}
+                                                                                onChange={e => handleCellChange(d.day, shift, sIdx, e.target.value)}
+                                                                            />
+                                                                        ))}
+                                                                        <div className="absolute -right-3 top-0 flex flex-col gap-0.5 print:hidden z-10">
+                                                                            <button onClick={() => addSlot(d.day, shift)} className="control-btn bg-indigo-500 text-white w-3 h-3 rounded-full flex items-center justify-center text-[8px] shadow font-bold">+</button>
+                                                                            <button onClick={() => removeLastSlot(d.day, shift)} className="control-btn bg-red-400 text-white w-3 h-3 rounded-full flex items-center justify-center text-[8px] shadow font-bold">-</button>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 面板 C: 師傅顏色 */}
+                        {activeTab === 'C' && (
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fadeIn">
+                                <div className="flex justify-between items-center mb-6 border-b pb-4">
+                                    <h2 className="text-2xl font-black text-slate-800">師傅配色管理與盤點</h2>
+                                    <div className="flex gap-4 text-center">
+                                        <div className="bg-slate-100 px-4 py-2 rounded border-b-4 border-slate-800 shadow-sm">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">男師</div>
+                                            <div className="text-xl font-black">{stats.mastersByCategory.male}</div>
+                                        </div>
+                                        <div className="bg-slate-100 px-4 py-2 rounded border-b-4 border-red-500 shadow-sm">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-red-400">女師</div>
+                                            <div className="text-xl font-black text-red-500">{stats.mastersByCategory.female}</div>
+                                        </div>
+                                        <div className="bg-slate-100 px-4 py-2 rounded border-b-4 border-blue-500 shadow-sm">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-blue-400">大全</div>
+                                            <div className="text-xl font-black text-blue-500">{stats.mastersByCategory.full}</div>
+                                        </div>
+                                        <div className="bg-indigo-600 px-4 py-2 rounded border-b-4 border-indigo-900 shadow-lg text-white">
+                                            <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest">師傅總計</div>
+                                            <div className="text-xl font-black">{stats.totalMasters} 位</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 mb-8 items-end bg-slate-50 p-6 rounded-xl border border-dashed border-slate-300">
+                                    <div className="flex-1 max-w-[200px]">
+                                        <label className="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest">編號 (ID)</label>
+                                        <input id="newId" type="text" className="w-full border-2 border-slate-200 p-3 rounded-lg font-mono text-lg outline-none focus:border-indigo-500 transition-all" placeholder="輸入 ID" />
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button onClick={() => {
+                                            const id = document.getElementById('newId').value;
+                                            if(id) setColorMap({...colorMap, [id]: "#000000"});
+                                        }} className="flex flex-col items-center gap-1 bg-white border-2 border-slate-800 px-6 py-2 rounded-lg hover:bg-slate-800 hover:text-white transition-all group shadow-sm">
+                                            <span className="text-sm font-black">男師</span>
+                                            <div className="w-4 h-1 bg-slate-800 group-hover:bg-white rounded"></div>
+                                        </button>
+                                        <button onClick={() => {
+                                            const id = document.getElementById('newId').value;
+                                            if(id) setColorMap({...colorMap, [id]: "#EF4444"});
+                                        }} className="flex flex-col items-center gap-1 bg-white border-2 border-red-500 px-6 py-2 rounded-lg hover:bg-red-500 hover:text-white transition-all group shadow-sm">
+                                            <span className="text-sm font-black text-red-500 group-hover:text-white">女師</span>
+                                            <div className="w-4 h-1 bg-red-500 group-hover:bg-white rounded"></div>
+                                        </button>
+                                        <button onClick={() => {
+                                            const id = document.getElementById('newId').value;
+                                            if(id) setColorMap({...colorMap, [id]: "#3B82F6"});
+                                        }} className="flex flex-col items-center gap-1 bg-white border-2 border-blue-500 px-6 py-2 rounded-lg hover:bg-blue-500 hover:text-white transition-all group shadow-sm">
+                                            <span className="text-sm font-black text-blue-500 group-hover:text-white">大全</span>
+                                            <div className="w-4 h-1 bg-blue-500 group-hover:bg-white rounded"></div>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">
+                                    {sortedColors.map(([id, color]) => {
+                                        const type = color === "#000000" ? "男師" : color === "#EF4444" ? "女師" : "大全";
+                                        const typeClass = color === "#000000" ? "bg-slate-800 text-white" : color === "#EF4444" ? "bg-red-500 text-white" : "bg-blue-500 text-white";
+                                        return (
+                                            <div key={id} className="flex flex-col items-center p-2 border rounded-xl hover:bg-indigo-50 relative group transition-colors shadow-sm bg-white border-slate-100">
+                                                <span className="font-mono text-base font-black leading-none mb-1" style={{ color }}>{id}</span>
+                                                <span className={`category-tag ${typeClass}`}>{type}</span>
+                                                <button onClick={() => {const m={...colorMap}; delete m[id]; setColorMap(m);}} className="absolute -top-1 -right-1 bg-white text-[8px] border-2 rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 shadow-md text-red-500 font-bold font-sans">✕</button>
+                                            </div>
+                                        );
+                                    })}
+                                    {[...Array(Math.max(0, 80 - sortedColors.length))].map((_, i) => (
+                                        <div key={i} className="h-14 border border-dashed border-slate-200 rounded-xl bg-slate-50/50"></div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <footer className="bg-white border-t p-2 text-center text-[10px] text-slate-400 print-hidden fixed bottom-0 w-full z-50 flex justify-center gap-4">
+                        <span className="font-bold">V1.1</span>
+                        <span className="uppercase tracking-widest font-bold">© 原點數位科技</span>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
