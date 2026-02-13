@@ -3,138 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>不老松中清店排班訪談系統 V1.9</title>
+    <title>不老松中清店管理系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- React 核心 (UMD 版本，不依賴 import) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel 實時編譯器 -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase 相容性 SDK (UMD 版本) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
         
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            background-color: #f1f5f9;
-            overflow-x: hidden;
-        }
-
         @media print {
-            @page { 
-                size: A4 portrait; 
-                margin: 0; 
-            }
-            html, body {
-                height: 100%;
-                margin: 0 !important;
-                padding: 0 !important;
-                overflow: hidden;
-            }
-            body { 
-                background: white; 
-                -webkit-print-color-adjust: exact;
-            }
+            @page { size: A4 portrait; margin: 0; }
+            html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: hidden; }
+            body { background: white; -webkit-print-color-adjust: exact; }
             .print-area { 
                 width: 100% !important; 
                 height: 100vh !important; 
-                max-height: 100vh !important;
+                max-height: 100vh !important; 
                 border: 2px solid black !important; 
-                margin: 0 !important;
-                display: flex;
-                flex-direction: column;
-                box-sizing: border-box;
+                margin: 0 !important; 
+                display: flex; 
+                flex-direction: column; 
+                box-sizing: border-box; 
             }
-            table { 
-                width: 100% !important; 
-                flex: 1; 
-                table-layout: fixed; 
-                border-collapse: collapse;
-            }
-            tr { 
-                page-break-inside: avoid; 
-                height: auto !important; 
-            }
-            th, td {
-                padding: 0 !important;
-                line-height: 1 !important;
-                vertical-align: middle;
-            }
+            table { width: 100% !important; flex: 1; table-layout: fixed; border-collapse: collapse; }
+            tr { page-break-inside: avoid; height: auto !important; }
+            th, td { padding: 0 !important; line-height: 1 !important; vertical-align: middle; border: 1px solid #333; text-align: center; }
             .print-hidden { display: none !important; }
-            input { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
-            nav, footer, .control-btn, .stat-box, .manager-tools, .edit-supervisors, .staff-editor { display: none !important; }
-            .slot-input { 
-                font-size: 13px !important; 
-                line-height: 1 !important; 
-                height: 100% !important; 
-                width: 100% !important; 
-                text-align: center;
-            }
-            .header-info { padding: 4px !important; }
+            input { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; background: transparent !important; }
+            nav, footer, .control-btn, .stat-box, .manager-tools, .edit-supervisors, .staff-editor, .loading-overlay { display: none !important; }
+            .slot-input { font-size: 13px !important; font-weight: 900 !important; width: 100% !important; }
+            .header-info { padding: 4px !important; background: #f3f4f6 !important; }
         }
 
-        .slot-input:focus {
-            background-color: #e2e8f0;
-            outline: none;
-        }
-
-        .control-btn {
-            opacity: 0.2;
-            transition: all 0.1s;
-        }
-        
-        td:hover .control-btn {
-            opacity: 1;
-        }
-        
+        .slot-input:focus { background-color: #f1f5f9; outline: none; }
+        .control-btn { opacity: 0.1; transition: all 0.2s; cursor: pointer; }
+        td:hover .control-btn { opacity: 1; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
-
-        .category-tag {
-            font-size: 10px;
-            padding: 1px 4px;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-
-        .interview-box {
-            cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid #f1f5f9;
-        }
-        .interview-box:hover {
-            border-color: #cbd5e1;
-            background-color: #f8fafc;
-        }
+        .interview-box { cursor: pointer; transition: all 0.1s; border: 1px solid #f1f5f9; }
+        .interview-box:hover { background-color: #f1f5f9; }
+        .single-view-container { max-height: calc(100vh - 220px); overflow-y: auto; }
         
-        .single-view-container {
-            max-height: calc(100vh - 220px);
-            overflow-y: auto;
-        }
+        .loading-overlay { position: fixed; inset: 0; background: #fff; display: flex; justify-content: center; items-center; z-index: 9999; flex-direction: column; gap: 15px; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo } = React;
+        // 確保從全域物件獲取庫，避免模組載入問題
+        const { useState, useMemo, useEffect } = window.React;
+        const firebase = window.firebase;
 
-        const INITIAL_HOLIDAYS = [
+        // --- 預設資料配置 ---
+        const PRESET_2026_HOLIDAYS = [
             { date: "2026-01-01", name: "元旦" },
-            { date: "2026-01-28", name: "除夕" },
-            { date: "2026-01-29", name: "春節初一" },
-            { date: "2026-01-30", name: "春節初二" },
-            { date: "2026-01-31", name: "春節初三" },
-            { date: "2026-02-01", name: "春節初四" },
-            { date: "2026-02-02", name: "春節初五" },
+            { date: "2026-02-14", name: "除夕" },
+            { date: "2026-02-15", name: "初一" },
+            { date: "2026-02-16", name: "初二" },
+            { date: "2026-02-17", name: "初三" },
+            { date: "2026-02-18", name: "初四" },
+            { date: "2026-02-19", name: "初五" },
+            { date: "2026-02-20", name: "春節連假" },
+            { date: "2026-02-21", name: "春節連假" },
+            { date: "2026-02-22", name: "春節連假" },
             { date: "2026-02-28", name: "和平紀念日" },
             { date: "2026-04-04", name: "兒童節" },
             { date: "2026-04-05", name: "清明節" },
+            { date: "2026-05-01", name: "勞動節" },
             { date: "2026-06-19", name: "端午節" },
             { date: "2026-09-25", name: "中秋節" },
             { date: "2026-10-10", name: "國慶日" }
         ];
 
-        const INITIAL_COLORS = {
+        const PRESET_COLORS = {
             "05": "#3B82F6", "58": "#3B82F6", "69": "#3B82F6",
             "03": "#EF4444", "06": "#EF4444", "07": "#EF4444", "11": "#EF4444", "18": "#EF4444", 
             "20": "#EF4444", "27": "#EF4444", "32": "#EF4444", "33": "#EF4444", "35": "#EF4444", 
@@ -149,343 +101,224 @@
             "96": "#000000", "97": "#000000", "98": "#000000", "99": "#000000", "100": "#000000", "101": "#000000"
         };
 
-        const SUPERVISOR_DEFAULTS = [
-            { id: 'A', color: "#9333EA", label: "主管 A" }, 
-            { id: 'B', color: "#DB2777", label: "主管 B" }, 
-            { id: 'C', color: "#0891B2", label: "主管 C" }, 
-            { id: 'D', color: "#EA580C", label: "主管 D" }, 
-            { id: 'E', color: "#65A30D", label: "主管 E" }, 
-            { id: 'F', color: "#4F46E5", label: "主管 F" }  
-        ];
+        const INITIAL_STATE = {
+            holidays: PRESET_2026_HOLIDAYS,
+            colorMap: PRESET_COLORS,
+            counterStaff: ["行政 A", "行政 B"],
+            supervisorList: [
+                { id: 'A', color: "#9333EA", label: "世傑" }, 
+                { id: 'B', color: "#DB2777", label: "信吉" },
+                { id: 'C', color: "#0891B2", label: "麥麥" }, 
+                { id: 'D', color: "#EA580C", label: "蕾蕾" },
+                { id: 'E', color: "#65A30D", label: "楷翔" }, 
+                { id: 'F', color: "#4F46E5", label: "小汝" }
+            ]
+        };
+
+        // --- Firebase 初始化 ---
+        const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        const firebaseConfig = JSON.parse(configStr);
+        
+        // 防止重複初始化
+        let app;
+        if (!firebase.apps.length) {
+            app = firebase.initializeApp(firebaseConfig);
+        } else {
+            app = firebase.app();
+        }
+        
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'unlaosong-v17';
 
         const App = () => {
+            const [user, setUser] = useState(null);
             const [activeTab, setActiveTab] = useState('B');
             const [year, setYear] = useState(2026);
             const [month, setMonth] = useState(2);
-            
-            const [colorMap, setColorMap] = useState(INITIAL_COLORS);
-            const [holidays, setHolidays] = useState(INITIAL_HOLIDAYS);
-            const [counterStaff, setCounterStaff] = useState(["張經理", "林秘書"]);
-            const [scheduleData, setScheduleData] = useState({});
-            const [supervisorList, setSupervisorList] = useState(SUPERVISOR_DEFAULTS);
-            const [interviewData, setInterviewData] = useState({});
-            const [currentBrushColor, setCurrentBrushColor] = useState(SUPERVISOR_DEFAULTS[0].color);
-            const [newHoliday, setNewHoliday] = useState({ date: "", name: "" });
-            const [newCounterName, setNewCounterName] = useState("");
+            const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-            const currentMonthKey = `${year}-${month}`;
+            const [settings, setSettings] = useState(INITIAL_STATE);
+            const [schedule, setSchedule] = useState({});
+            const [interview, setInterview] = useState({});
 
-            // 核心統計邏輯
-            const stats = useMemo(() => {
-                const allScheduleEntries = Object.values(scheduleData).flat().map(v => v.trim()).filter(Boolean);
-                const uniqueUsedIds = new Set(allScheduleEntries);
-                const masterIds = Object.keys(colorMap);
-                const missingIds = masterIds.filter(id => !uniqueUsedIds.has(id)).sort((a, b) => parseInt(a) - parseInt(b));
-                
-                const monthData = interviewData[currentMonthKey] || {};
-                let interviewMasterCount = 0;
-                let interviewCounterCount = 0;
-                
-                const individualCounts = {};
-                supervisorList.forEach(s => individualCounts[s.color] = 0);
+            const monthKey = `${year}-${month}`;
 
-                Object.keys(monthData).forEach(id => {
-                    const color = monthData[id];
-                    if (individualCounts.hasOwnProperty(color)) {
-                        individualCounts[color]++;
+            // --- 認證流程 ---
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                        if (token) {
+                            await auth.signInWithCustomToken(token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                    } catch (err) {
+                        console.error("Firebase Auth Error:", err);
+                        // 本地測試時若無配置，強制結束載入畫面以便看到介面
+                        setIsInitialLoad(false);
                     }
-                    if (masterIds.includes(id)) interviewMasterCount++;
-                    else if (counterStaff.includes(id)) interviewCounterCount++;
-                });
-
-                return {
-                    missingIds,
-                    totalMasters: masterIds.length,
-                    interviewTotal: interviewMasterCount + interviewCounterCount,
-                    interviewMasterCount,
-                    interviewCounterCount,
-                    monthData,
-                    individualCounts
                 };
-            }, [scheduleData, colorMap, interviewData, currentMonthKey, counterStaff, supervisorList]);
+                initAuth();
+                const unsub = auth.onAuthStateChanged(u => { if(u) setUser(u); });
+                return () => unsub();
+            }, []);
 
-            const toggleInterviewMarker = (personId) => {
-                const monthData = { ...(interviewData[currentMonthKey] || {}) };
-                if (monthData[personId] === currentBrushColor) {
-                    delete monthData[personId];
-                } else {
-                    monthData[personId] = currentBrushColor;
-                }
-                setInterviewData({ ...interviewData, [currentMonthKey]: monthData });
-            };
+            // --- 資料同步 ---
+            useEffect(() => {
+                if (!user) return;
+                const setRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global');
+                const unsub = setRef.onSnapshot(snap => {
+                    if (snap.exists) {
+                        setSettings(snap.data());
+                    } else {
+                        setRef.set(INITIAL_STATE);
+                    }
+                    setIsInitialLoad(false);
+                }, () => setIsInitialLoad(false));
+                return () => unsub();
+            }, [user]);
 
-            const updateSupervisorName = (index, newName) => {
-                const newList = [...supervisorList];
-                newList[index].label = newName;
-                setSupervisorList(newList);
-            };
+            useEffect(() => {
+                if (!user) return;
+                const dataRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(monthKey);
+                const unsub = dataRef.onSnapshot(snap => {
+                    if (snap.exists) {
+                        const d = snap.data();
+                        setSchedule(d.schedule || {});
+                        setInterview(d.interview || {});
+                    } else {
+                        setSchedule({});
+                        setInterview({});
+                    }
+                });
+                return () => unsub();
+            }, [user, monthKey]);
 
-            // 櫃台人員維護邏輯 (V1.9)
-            const addCounterStaff = () => {
-                if (newCounterName && !counterStaff.includes(newCounterName)) {
-                    setCounterStaff([...counterStaff, newCounterName]);
-                    setNewCounterName("");
-                }
-            };
+            const pushS = (val) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set(val);
+            const pushD = (sch, int) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(monthKey).set({ schedule: sch, interview: int });
 
-            const removeCounterStaff = (name) => {
-                setCounterStaff(counterStaff.filter(n => n !== name));
-                // 同步移除訪談標記
-                const monthData = { ...(interviewData[currentMonthKey] || {}) };
-                if (monthData[name]) {
-                    delete monthData[name];
-                    setInterviewData({ ...interviewData, [currentMonthKey]: monthData });
-                }
-            };
+            const stats = useMemo(() => {
+                const ids = Object.values(schedule).flat().map(v => v.trim()).filter(Boolean);
+                const masters = Object.keys(settings.colorMap);
+                const missing = masters.filter(id => !new Set(ids).has(id)).sort((a,b)=>parseInt(a)-parseInt(b));
+                const sCount = {};
+                settings.supervisorList.forEach(s => sCount[s.color] = 0);
+                let mCount = 0, cCount = 0;
+                Object.keys(interview).forEach(id => {
+                    const col = interview[id];
+                    if(sCount.hasOwnProperty(col)) sCount[col]++;
+                    if(masters.includes(id)) mCount++;
+                    else if(settings.counterStaff.includes(id)) cCount++;
+                });
+                return { missing, total: mCount + cCount, mCount, cCount, sCount };
+            }, [schedule, settings, interview]);
 
-            const handleCellChange = (day, shift, index, value) => {
-                const key = `${day}-${shift}`;
-                const currentSlots = scheduleData[key] || Array(8).fill('');
-                const newSlots = [...currentSlots];
-                newSlots[index] = value;
-                setScheduleData({ ...scheduleData, [key]: newSlots });
-            };
+            const [brush, setBrush] = useState(INITIAL_STATE.supervisorList[0].color);
 
-            const sortedMasters = useMemo(() => Object.keys(colorMap).sort((a,b)=>parseInt(a)-parseInt(b)), [colorMap]);
+            if (isInitialLoad) return <div className="loading-overlay"><div className="spinner"></div><p className="font-bold text-indigo-600 italic tracking-widest">不老松管理系統載入中...</p></div>;
 
             return (
                 <div className="min-h-screen flex flex-col">
                     <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b">
                         <div className="flex items-center gap-4">
-                            <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase">不老松中清店</h1>
-                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
+                            <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase font-serif">不老松中清店</h1>
+                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold shadow-inner">
                                 {['A', 'B', 'C', 'D'].map(tab => (
-                                    <button 
-                                        key={tab}
-                                        onClick={() => setActiveTab(tab)} 
-                                        className={`px-4 py-1.5 rounded ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500'}`}
-                                    >
-                                        {tab === 'A' ? '國定假日' : tab === 'B' ? '排版主表' : tab === 'C' ? '師傅顏色' : '訪談標記'}
+                                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
+                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='C'?'師傅顏色':'訪談標記'}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        <div className="text-xs font-bold text-slate-400 font-mono">
-                            <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="bg-transparent outline-none">
+                        <div className="text-xs font-bold text-slate-400 font-mono flex items-center gap-2">
+                            <select value={year} onChange={e=>setYear(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
                                 {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
                             </select>
-                            <span className="mx-1">/</span>
-                            <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className="bg-transparent outline-none">
+                            <span className="opacity-50">/</span>
+                            <select value={month} onChange={e=>setMonth(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
                                 {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{String(i+1).padStart(2, '0')}</option>)}
                             </select>
                         </div>
                     </nav>
 
                     <main className="flex-1 max-w-7xl mx-auto w-full p-4 mb-10 overflow-hidden">
-                        {/* 面板 D: 訪談標記 (V1.9 櫃台管理增強) */}
-                        {activeTab === 'D' && (
-                            <div className="flex flex-col h-full animate-fadeIn gap-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print-hidden">
-                                    {/* 主管名單維護 */}
-                                    <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-200">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase mb-2 tracking-widest flex justify-between items-center">
-                                            主管名單 
-                                            <span className="text-indigo-500 bg-indigo-50 px-1.5 rounded">編輯區</span>
-                                        </h3>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {supervisorList.map((s, idx) => (
-                                                <div key={s.id} className="flex flex-col gap-1">
-                                                    <input 
-                                                        type="text" 
-                                                        value={s.label} 
-                                                        onChange={(e) => updateSupervisorName(idx, e.target.value)}
-                                                        className="text-[10px] border p-1 rounded font-bold focus:ring-1 focus:ring-indigo-300 outline-none"
-                                                        style={{ borderLeft: `4px solid ${s.color}` }}
-                                                    />
-                                                </div>
-                                            ))}
+                        {activeTab === 'A' && (
+                            <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn">
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2 tracking-widest">2026 國定假日管理</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div className="bg-slate-50 p-4 rounded-lg border">
+                                        <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase">新增或編輯假日</h3>
+                                        <div className="space-y-3">
+                                            <input id="hn" className="w-full border p-2 rounded text-sm font-bold outline-none" placeholder="節日名稱" />
+                                            <input id="hd" type="date" className="w-full border p-2 rounded text-sm font-mono" />
+                                            <button onClick={()=>{
+                                                const n=document.getElementById('hn').value, d=document.getElementById('hd').value;
+                                                if(n&&d){ const next={...settings, holidays:[...settings.holidays.filter(x=>x.date!==d), {date:d, name:n}]}; setSettings(next); pushS(next); }
+                                            }} className="w-full bg-indigo-600 text-white py-2 rounded font-black shadow hover:bg-indigo-700 transition-colors">儲存至雲端</button>
                                         </div>
                                     </div>
-
-                                    {/* 櫃台名單維護 (V1.9 新增) */}
-                                    <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 staff-editor">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase mb-2 tracking-widest">櫃台團隊維護</h3>
-                                        <div className="flex gap-1 mb-2">
-                                            <input 
-                                                type="text" 
-                                                value={newCounterName}
-                                                onChange={(e) => setNewCounterName(e.target.value)}
-                                                onKeyPress={(e) => e.key === 'Enter' && addCounterStaff()}
-                                                className="flex-1 text-[10px] border p-1 rounded font-bold outline-none"
-                                                placeholder="輸入人員名稱"
-                                            />
-                                            <button onClick={addCounterStaff} className="bg-indigo-600 text-white px-2 py-1 rounded text-[10px] font-black hover:bg-indigo-700">新增</button>
-                                        </div>
-                                        <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
-                                            {counterStaff.map(name => (
-                                                <div key={name} className="bg-slate-50 border px-1.5 py-0.5 rounded-md flex items-center gap-1">
-                                                    <span className="text-[10px] font-bold text-slate-600">{name}</span>
-                                                    <button onClick={() => removeCounterStaff(name)} className="text-red-400 hover:text-red-600 text-[8px] font-black">✕</button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* 筆刷工具 */}
-                                    <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-between">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">點選主管開始標記</h3>
-                                            <div className="text-[10px] font-black text-indigo-600">已完成: {stats.interviewTotal}</div>
-                                        </div>
-                                        <div className="grid grid-cols-6 gap-1">
-                                            {supervisorList.map(s => (
-                                                <button 
-                                                    key={s.id}
-                                                    onClick={() => setCurrentBrushColor(s.color)}
-                                                    className={`py-1 px-0.5 rounded transition-all border-2 flex flex-col items-center justify-center ${currentBrushColor === s.color ? 'scale-105 shadow-md border-slate-800' : 'opacity-40 border-transparent grayscale-[0.3]'}`}
-                                                    style={{ backgroundColor: s.color, color: 'white' }}
-                                                >
-                                                    <span className="text-[8px] font-black leading-none mb-0.5 truncate w-full">{s.label}</span>
-                                                    <span className="text-[9px] font-bold">{stats.individualCounts[s.color]}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="print-area bg-white border-2 border-slate-900 shadow-xl flex flex-col overflow-hidden max-h-screen">
-                                    <div className="flex border-b border-slate-900 font-bold bg-white p-1 text-center justify-center items-center gap-4">
-                                        <span className="text-xs font-black">不老松中清店</span>
-                                        <span className="text-lg tracking-[0.2em] font-black uppercase text-indigo-700">{month}月績效訪談表</span>
-                                        <div className="print:hidden text-[10px] text-slate-400">當前筆刷：<span className="font-black" style={{ color: currentBrushColor }}>{supervisorList.find(s=>s.color===currentBrushColor)?.label}</span></div>
-                                    </div>
-
-                                    <div className="single-view-container custom-scrollbar p-2">
-                                        {/* 櫃台團隊 */}
-                                        <div className="mb-4">
-                                            <div className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase tracking-widest shadow-sm">櫃台團隊 ({stats.interviewCounterCount}/{counterStaff.length})</div>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 border-t-2 border-indigo-600 bg-slate-50">
-                                                {counterStaff.map(name => (
-                                                    <div 
-                                                        key={name} 
-                                                        onClick={() => toggleInterviewMarker(name)}
-                                                        className="interview-box flex items-center justify-between p-2"
-                                                        style={{ backgroundColor: stats.monthData[name] ? `${stats.monthData[name]}11` : 'transparent' }}
-                                                    >
-                                                        <span className="text-xs font-bold text-slate-700">{name}</span>
-                                                        <div 
-                                                            className="w-5 h-5 rounded flex items-center justify-center border transition-all"
-                                                            style={{ 
-                                                                backgroundColor: stats.monthData[name] || 'white',
-                                                                borderColor: stats.monthData[name] ? 'transparent' : '#e2e8f0'
-                                                            }}
-                                                        >
-                                                            {stats.monthData[name] && <span className="text-white text-[8px] font-black">✓</span>}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* 師傅團隊 */}
-                                        <div>
-                                            <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase tracking-widest shadow-sm">師傅團隊 ({stats.interviewMasterCount}/{stats.totalMasters})</div>
-                                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 border-t-2 border-slate-800">
-                                                {sortedMasters.map(id => (
-                                                    <div 
-                                                        key={id} 
-                                                        onClick={() => toggleInterviewMarker(id)}
-                                                        className="interview-box flex flex-col items-center justify-center p-2 border-r border-b"
-                                                        style={{ backgroundColor: stats.monthData[id] ? `${stats.monthData[id]}11` : 'transparent' }}
-                                                    >
-                                                        <div className="flex items-center gap-2 mb-0.5">
-                                                            <span className="font-mono text-sm font-black" style={{ color: colorMap[id] }}>{id}</span>
-                                                            <div 
-                                                                className="w-4 h-4 rounded-full flex items-center justify-center transition-all border"
-                                                                style={{ 
-                                                                    backgroundColor: stats.monthData[id] || 'white',
-                                                                    borderColor: stats.monthData[id] ? 'transparent' : '#f1f5f9'
-                                                                }}
-                                                            >
-                                                                {stats.monthData[id] && <span className="text-white text-[8px] font-black">✓</span>}
-                                                            </div>
-                                                        </div>
-                                                        {stats.monthData[id] && (
-                                                            <span className="text-[8px] font-bold text-slate-500 truncate w-full text-center scale-90">
-                                                                {supervisorList.find(s=>s.color === stats.monthData[id])?.label}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* 底部圖例 */}
-                                    <div className="mt-auto border-t-2 border-slate-900 bg-slate-50 p-2 flex flex-wrap justify-center gap-x-6 gap-y-1">
-                                        {supervisorList.map(s => (
-                                            <div key={s.id} className="flex items-center gap-2">
-                                                <div className="w-3 h-3 rounded shadow-sm" style={{ backgroundColor: s.color }}></div>
-                                                <span className="text-[10px] font-black text-slate-700">{s.label}: </span>
-                                                <span className="text-[10px] font-black text-indigo-700">{stats.individualCounts[s.color]} 人</span>
+                                    <div className="max-h-[60vh] overflow-y-auto custom-scrollbar border rounded p-2 bg-white">
+                                        {settings.holidays.sort((a,b)=>a.date.localeCompare(b.date)).map(h => (
+                                            <div key={h.date} className="py-2 px-3 border-b flex justify-between group hover:bg-red-50 transition-all">
+                                                <span className="font-mono text-sm font-bold">{h.date} <span className="text-red-500 ml-4 font-black">{h.name}</span></span>
+                                                <button onClick={()=>{const next={...settings, holidays:settings.holidays.filter(x=>x.date!==h.date)}; setSettings(next); pushS(next);}} className="text-red-300 opacity-0 group-hover:opacity-100 hover:text-red-600 font-black">✕</button>
                                             </div>
                                         ))}
-                                        <div className="flex items-center gap-2 border-l pl-6 border-slate-300">
-                                            <span className="text-[10px] font-black text-indigo-900 bg-white px-2 py-0.5 rounded shadow-sm">總計訪談：{stats.interviewTotal} 位</span>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* 面板 B, C, A 保留 V1.8 功能 */}
                         {activeTab === 'B' && (
-                            <div className="w-full animate-fadeIn">
+                            <div className="animate-fadeIn">
                                 <div className="flex justify-between items-end mb-4 print-hidden">
                                     <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <h2 className="font-black text-slate-800 text-lg uppercase tracking-wider">排版主表</h2>
-                                            <div className="flex items-center bg-white border border-slate-200 rounded-md px-2 py-1 shadow-sm gap-2 font-mono font-black text-indigo-600">
-                                                <button onClick={() => setMonth(prev => prev === 1 ? 12 : prev - 1)} className="hover:bg-indigo-50 px-2 rounded">❮</button>
-                                                <span className="min-w-[4rem] text-center">{year} / {String(month).padStart(2, '0')}</span>
-                                                <button onClick={() => setMonth(prev => prev === 12 ? 1 : prev + 1)} className="hover:bg-indigo-50 px-2 rounded">❯</button>
-                                            </div>
-                                        </div>
-                                        <div className="bg-amber-50 border border-amber-200 px-4 py-3 rounded shadow-sm">
-                                            <div className="font-mono text-amber-700 text-sm break-all">
-                                                <span className="font-black text-amber-900 underline mr-2 text-xs uppercase">未排號碼：</span>
-                                                {stats.missingIds.join(', ') || '✅ 全數排入'}
-                                            </div>
+                                        <h2 className="font-black text-slate-800 text-lg uppercase tracking-wider mb-2">排班主表</h2>
+                                        <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded shadow-sm text-sm">
+                                            <span className="font-black text-amber-900 mr-2 underline">未排號碼盤點：</span>
+                                            <span className="font-mono text-amber-700 font-bold break-all leading-relaxed">{stats.missing.join(', ') || '✅ 所有人員皆已排入'}</span>
                                         </div>
                                     </div>
-                                    <div className="ml-6"><button onClick={() => window.print()} className="bg-slate-800 text-white px-8 py-3 rounded-full text-sm font-black shadow-xl">列印 A4</button></div>
+                                    <button onClick={()=>window.print()} className="bg-slate-800 text-white px-8 py-3 rounded-full text-sm font-black shadow-xl hover:bg-black transition-all active:scale-95 ml-6">列印 A4</button>
                                 </div>
-                                <div className="print-area bg-white border-2 border-slate-900 overflow-hidden shadow-2xl mx-auto">
-                                    <div className="flex border-b border-slate-900 font-bold bg-white header-info p-1">
-                                        <div className="w-24 border-r border-slate-900 text-[10px] flex items-center justify-center font-black">不老松中清店</div>
+                                <div className="print-area bg-white border-2 border-slate-900 mx-auto overflow-hidden shadow-2xl">
+                                    <div className="flex border-b border-slate-900 font-bold p-1 bg-white items-center header-info">
+                                        <div className="w-24 border-r border-slate-900 text-[10px] flex justify-center font-black">不老松中清店</div>
                                         <div className="flex-1 text-center text-base tracking-[0.2em] font-black uppercase"><span className="text-orange-600">{month}月</span>無法排班表</div>
                                     </div>
                                     <table className="w-full border-collapse text-[10px] table-fixed">
-                                        <thead><tr className="bg-slate-50 border-b border-slate-900 font-bold uppercase"><th className="border-r border-slate-300 w-8">日</th><th className="border-r border-slate-900 w-12 text-center">週</th><th className="border-r border-slate-300 bg-blue-50 py-0.5 w-[30%]">早班 (08-11)</th><th className="border-r border-slate-300 bg-red-50 py-0.5 w-[30%]">午班 (12-17)</th><th className="bg-green-50 py-0.5 w-[30%]">夜班 (18-20)</th></tr></thead>
+                                        <thead><tr className="bg-slate-50 border-b border-slate-900 font-bold uppercase tracking-tighter">
+                                            <th className="border-r w-8 py-1 text-center">日</th><th className="border-r w-12 text-center">週</th>
+                                            <th className="border-r bg-blue-50/50 w-[30%]">早班 (08-11)</th>
+                                            <th className="border-r bg-red-50/50 w-[30%]">午班 (12-17)</th>
+                                            <th className="bg-green-50/50 w-[30%]">夜班 (18-20)</th>
+                                        </tr></thead>
                                         <tbody>
-                                            {Array.from({ length: new Date(year, month, 0).getDate() }, (_, i) => i + 1).map(day => {
-                                                const dateObj = new Date(year, month - 1, day);
-                                                const weekdayArr = ['日', '一', '二', '三', '四', '五', '六'];
-                                                const dateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                                                const holiday = holidays.find(h => h.date === dateString);
-                                                const isHoliday = !!holiday || dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                                                const cellColor = isHoliday ? 'text-red-600' : 'text-slate-800';
+                                            {Array.from({length: new Date(year, month, 0).getDate()}, (_,i)=>i+1).map(day => {
+                                                const dObj = new Date(year, month-1, day);
+                                                const dStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                                                const h = settings.holidays.find(x=>x.date===dStr);
+                                                const isH = !!h || dObj.getDay()===0 || dObj.getDay()===6;
+                                                const clr = isH ? 'text-red-600' : 'text-slate-800';
                                                 return (
-                                                    <tr key={day} className="border-b border-slate-300 h-[24px]">
-                                                        <td className={`border-r border-slate-300 text-center font-black ${cellColor}`}>{day}</td>
-                                                        <td className={`border-r-2 border-slate-900 ${cellColor} flex flex-col items-center justify-center h-full min-h-[24px]`}><div className="text-[10px] font-bold">({weekdayArr[dateObj.getDay()]})</div>{holiday && <div className="text-[6px] scale-[0.65] font-black">{holiday.name}</div>}</td>
+                                                    <tr key={day} className="border-b h-[24px]">
+                                                        <td className={`border-r text-center font-black ${clr}`}>{day}</td>
+                                                        <td className={`border-r text-center ${clr} flex flex-col justify-center leading-none h-full`}>
+                                                            <div className="text-[10px] font-bold">({['日','一','二','三','四','五','六'][dObj.getDay()]})</div>
+                                                            {h && <div className="text-[6px] scale-[0.6] font-black leading-tight truncate">{h.name}</div>}
+                                                        </td>
                                                         {['early', 'middle', 'late'].map((shift, idx) => (
-                                                            <td key={shift} className={`p-0 border-r ${idx === 2 ? 'border-r-0' : 'border-slate-300'} ${shift==='early'?'bg-blue-50/5':shift==='middle'?'bg-red-50/5':'bg-green-50/5'}`}>
-                                                                <div className="grid grid-cols-8 gap-0 h-full relative group">
-                                                                    {(scheduleData[`${day}-${shift}`] || Array(8).fill('')).map((val, sIdx) => (
-                                                                        <input key={sIdx} className="w-full h-full text-center font-black text-sm outline-none bg-transparent slot-input border-r border-slate-100 last:border-r-0" style={{ color: colorMap[val.trim()] || '#000000' }} value={val} onChange={e => handleCellChange(day, shift, sIdx, e.target.value)} />
+                                                            <td key={shift} className={`p-0 border-r ${idx===2?'border-r-0':''} ${shift==='early'?'bg-blue-50/5':shift==='middle'?'bg-red-50/5':'bg-green-50/5'}`}>
+                                                                <div className="grid grid-cols-8 h-full relative group">
+                                                                    {(schedule[`${day}-${shift}`] || Array(8).fill('')).map((v, sIdx) => (
+                                                                        <input key={sIdx} className="w-full h-full text-center font-black text-sm outline-none slot-input border-r border-slate-100 last:border-r-0" style={{ color: settings.colorMap[v.trim()] || '#000' }} value={v} onChange={e => {
+                                                                            const key=`${day}-${shift}`; const slots = schedule[key] || Array(8).fill('');
+                                                                            const next=[...slots]; next[sIdx]=e.target.value; const nextSch={...schedule,[key]:next};
+                                                                            setSchedule(nextSch); pushD(nextSch, interview);
+                                                                        }} />
                                                                     ))}
-                                                                    <div className="absolute -right-3 top-0 flex flex-col gap-0.5 print:hidden z-10"><button onClick={() => {const key=`${day}-${shift}`; const cur = scheduleData[key] || Array(8).fill(''); setScheduleData({...scheduleData, [key]: [...cur, '']});}} className="control-btn bg-indigo-500 text-white w-3 h-3 rounded-full flex items-center justify-center text-[8px] font-bold">+</button><button onClick={() => {const key=`${day}-${shift}`; const cur = scheduleData[key] || Array(8).fill(''); if(cur.length>1) setScheduleData({...scheduleData, [key]: cur.slice(0, -1)});}} className="control-btn bg-red-400 text-white w-3 h-3 rounded-full flex items-center justify-center text-[8px] font-bold">-</button></div>
                                                                 </div>
                                                             </td>
                                                         ))}
@@ -499,30 +332,89 @@
                         )}
 
                         {activeTab === 'C' && (
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fadeIn h-full overflow-y-auto custom-scrollbar">
-                                <div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-2xl font-black text-slate-800">師傅配色管理</h2><div className="bg-indigo-600 px-4 py-2 rounded-lg text-white shadow-lg flex flex-col items-end"><span className="text-[10px] font-bold uppercase opacity-80">師傅總量</span><span className="text-xl font-black">{stats.totalMasters} 位</span></div></div>
-                                <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">{Object.entries(colorMap).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([id, color]) => (<div key={id} className="flex flex-col items-center p-2 border rounded-xl bg-white relative group border-slate-100 shadow-sm transition-all hover:scale-105"><span className="font-mono text-base font-black leading-none mb-1" style={{ color }}>{id}</span><span className={`category-tag text-white ${color==='#000000'?'bg-slate-800':color==='#EF4444'?'bg-red-500':'bg-blue-500'}`}>{color==='#000000'?'男師':color==='#EF4444'?'女師':'大全'}</span><button onClick={() => {const m={...colorMap}; delete m[id]; setColorMap(m);}} className="absolute -top-1 -right-1 bg-white text-[8px] border-2 rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 shadow-md text-red-500 font-bold">✕</button></div>))}</div>
+                            <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn h-full overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest">師傅配色管理</h2><div className="bg-indigo-600 px-4 py-2 rounded-lg text-white shadow-lg flex flex-col items-end"><span className="text-[10px] font-bold uppercase opacity-80 tracking-widest">師傅總量</span><span className="text-xl font-black">{Object.keys(settings.colorMap).length} 位</span></div></div>
+                                <div className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-10 gap-3 text-center">
+                                    {Object.entries(settings.colorMap).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([id, color]) => (
+                                        <div key={id} className="p-2 border rounded-xl bg-white shadow-sm hover:scale-110 transition-all border-slate-100">
+                                            <span className="font-mono text-base font-black" style={{ color }}>{id}</span>
+                                            <span className={`text-[8px] text-white px-1.5 rounded font-bold block mt-1 ${color==='#000'?'bg-slate-800':color==='#EF4444'?'bg-red-500':'bg-blue-500'}`}>{color==='#000'?'男':color==='#EF4444'?'女':'全'}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
 
-                        {activeTab === 'A' && (
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 animate-fadeIn h-full flex flex-col overflow-hidden">
-                                <h2 className="text-xl font-bold mb-4 uppercase tracking-widest text-slate-800">國定假日管理系統</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1 overflow-hidden">
-                                    <div className="bg-slate-50 p-4 rounded-lg border flex flex-col gap-4">
-                                        <h3 className="text-sm font-bold text-slate-500 uppercase">新增或編輯假日</h3>
-                                        <div><label className="block text-xs font-bold text-slate-400 mb-1">節日名稱</label><input type="text" value={newHoliday.name} onChange={e => setNewHoliday({...newHoliday, name: e.target.value})} className="w-full border p-2 rounded outline-none font-bold" placeholder="例如: 清明節" /></div>
-                                        <div><label className="block text-xs font-bold text-slate-400 mb-1">選擇日期</label><input type="date" value={newHoliday.date} onChange={e => setNewHoliday({...newHoliday, date: e.target.value})} className="w-full border p-2 rounded outline-none font-mono font-bold" /></div>
-                                        <button onClick={() => { if(newHoliday.date && newHoliday.name) { setHolidays([...holidays.filter(h=>h.date!==newHoliday.date), newHoliday]); setNewHoliday({ date: "", name: "" }); } }} className="w-full bg-indigo-600 text-white py-2 rounded font-black shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">儲存至雲端</button>
+                        {activeTab === 'D' && (
+                            <div className="flex flex-col h-full animate-fadeIn gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print-hidden">
+                                    <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-col justify-between">
+                                        <h3 className="text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">主管名單維護</h3>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {settings.supervisorList.map((s, idx) => (
+                                                <input key={s.id} value={s.label} onChange={e => {
+                                                    const nextL=[...settings.supervisorList]; nextL[idx].label=e.target.value;
+                                                    const nextS={...settings, supervisorList:nextL}; setSettings(nextS); pushS(nextS);
+                                                }} className="text-[10px] border p-1 rounded font-bold outline-none focus:border-indigo-300 transition-all" style={{ borderLeft:`4px solid ${s.color}` }} />
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="overflow-y-auto custom-scrollbar border rounded-lg p-2 bg-white shadow-inner">{holidays.sort((a,b)=>a.date.localeCompare(b.date)).map(h => (<div key={h.date} className="text-sm py-2 px-3 border-b flex justify-between items-center group hover:bg-red-50 transition-colors"><span className="font-mono font-bold text-slate-600">{h.date} <span className="text-red-500 ml-4 font-black">{h.name}</span></span><button onClick={()=>setHolidays(holidays.filter(x=>x.date!==h.date))} className="text-red-300 opacity-0 group-hover:opacity-100 transition-opacity font-bold">✕</button></div>))}</div>
+                                    <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-col gap-2">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">櫃台維護</h3>
+                                        <input className="w-full border p-1 rounded text-xs font-bold outline-none focus:border-indigo-300" placeholder="按 Enter 新增人員" onKeyPress={e=>{ if(e.key==='Enter'&&e.target.value){ const nextS={...settings, counterStaff:[...settings.counterStaff, e.target.value]}; setSettings(nextS); pushS(nextS); e.target.value=""; }}} />
+                                        <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
+                                            {settings.counterStaff.map(n => <div key={n} className="bg-slate-50 border px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 font-bold">{n}<button onClick={()=>{const nextS={...settings, counterStaff:settings.counterStaff.filter(x=>x!==n)}; setSettings(nextS); pushS(nextS);}} className="text-red-400 hover:text-red-600 transition-colors pl-1">✕</button></div>)}
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-xl border shadow-sm">
+                                        <div className="flex justify-between mb-1"><span className="text-xs font-black text-slate-400 uppercase">筆刷選擇</span><span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 rounded">已完成: {stats.total} 位</span></div>
+                                        <div className="grid grid-cols-6 gap-1">
+                                            {settings.supervisorList.map(s => (
+                                                <button key={s.id} onClick={()=>setBrush(s.color)} className={`py-1 rounded border-2 flex flex-col items-center transition-all ${brush===s.color?'border-slate-800 shadow-md scale-105':'opacity-30 border-transparent grayscale'}`} style={{ backgroundColor: s.color, color: 'white' }}>
+                                                    <span className="text-[8px] font-black leading-none mb-1 truncate w-full">{s.label}</span>
+                                                    <span className="text-[10px] font-black">{stats.sCount[s.color]}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="print-area bg-white border-2 border-slate-900 shadow-xl flex flex-col overflow-hidden max-h-screen">
+                                    <div className="flex border-b border-slate-900 font-bold p-2 items-center justify-center gap-4 bg-white text-center">
+                                        <span className="text-lg font-black uppercase text-indigo-700 tracking-widest">{month}月 員工績效訪談盤點報表</span>
+                                    </div>
+                                    <div className="single-view-container custom-scrollbar p-2">
+                                        <div className="mb-2 bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block shadow-sm">櫃台團隊 ({stats.cCount}/{settings.counterStaff.length})</div>
+                                        <div className="grid grid-cols-5 bg-slate-50 border-t border-indigo-600 mb-4 shadow-inner border-b">
+                                            {settings.counterStaff.map(n => (
+                                                <div key={n} onClick={()=>{ const next={...interview}; if(next[n]===brush) delete next[n]; else next[n]=brush; setInterview(next); pushD(schedule,next); }} className="interview-box p-1.5 flex items-center justify-between border-r border-b border-slate-200" style={{ backgroundColor: interview[n]?`${interview[n]}11`:'' }}>
+                                                    <span className="text-xs font-bold text-slate-700">{n}</span>
+                                                    <div className="w-5 h-5 rounded border flex items-center justify-center bg-white shadow-sm" style={{ backgroundColor: interview[n] || 'white' }}>{interview[n] && <span className="text-white text-[8px] font-black">✓</span>}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block shadow-sm">師傅團隊 ({stats.mCount}/{Object.keys(settings.colorMap).length})</div>
+                                        <div className="grid grid-cols-8 border-t border-slate-800 shadow-inner">
+                                            {Object.keys(settings.colorMap).sort((a,b)=>parseInt(a)-parseInt(b)).map(id => (
+                                                <div key={id} onClick={()=>{ const next={...interview}; if(next[id]===brush) delete next[id]; else next[id]=brush; setInterview(next); pushD(schedule,next); }} className="interview-box p-1 flex flex-col items-center border-r border-b border-slate-200 h-10 justify-center text-center" style={{ backgroundColor: interview[id]?`${interview[id]}11`:'' }}>
+                                                    <span className="font-mono text-xs font-black" style={{ color: settings.colorMap[id] }}>{id}</span>
+                                                    <div className="w-3 h-3 rounded-full border bg-white mt-0.5 shadow-inner" style={{ backgroundColor: interview[id] || 'white' }}></div>
+                                                    {interview[id] && <span className="text-[6px] font-bold text-slate-500 mt-0.5 truncate w-full scale-90 leading-tight tracking-tighter">{settings.supervisorList.find(x=>x.color===interview[id])?.label}</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="mt-auto border-t border-slate-900 bg-slate-50 p-2 flex justify-center gap-6 flex-wrap shadow-inner text-center">
+                                        {settings.supervisorList.map(s => <div key={s.id} className="flex items-center gap-1.5 text-[10px] font-black text-slate-700"><div className="w-3 h-3 rounded-sm shadow-sm" style={{ backgroundColor: s.color }}></div>{s.label}: {stats.sCount[s.color]} 人</div>)}
+                                        <div className="border-l border-slate-400 pl-6 font-black text-[10px] text-indigo-700">總訪談量：{stats.total} 位</div>
+                                    </div>
                                 </div>
                             </div>
                         )}
                     </main>
 
-                    <footer className="bg-white border-t p-2 text-center text-[10px] text-slate-400 print-hidden fixed bottom-0 w-full z-50 flex justify-center gap-4">
-                        <span className="font-bold tracking-widest uppercase">V1.9 櫃台管理正式版 © 原點數位科技</span>
+                    <footer className="bg-white border-t p-2 text-center text-[10px] text-slate-400 print-hidden fixed bottom-0 w-full z-50 flex justify-center gap-6 shadow-md bg-opacity-90 backdrop-blur-sm">
+                        <span className="uppercase tracking-widest font-black text-indigo-400 tracking-widest">© 原點數位科技 - 雲端管理系統</span>
                     </footer>
                 </div>
             );
