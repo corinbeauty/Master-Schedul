@@ -6,16 +6,17 @@
     <title>不老松中清店管理系統</title>
     <!-- 引入全域 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 載入 React 核心 (UMD 版本，確保本地開啟相容) -->
+    <!-- 載入 React 核心 (UMD 版本) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- 載入 Babel 實時轉譯器 (解析 JSX) -->
+    <!-- 載入 Babel 實時轉譯器 -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <!-- 載入 Firebase 相容性 SDK (UMD 版本) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics-compat.js"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; margin: 0; padding: 0; }
@@ -46,231 +47,309 @@
         }
 
         .slot-input:focus { background-color: #f1f5f9; outline: none; }
-        .control-btn { opacity: 0.1; transition: all 0.2s; cursor: pointer; }
-        td:hover .control-btn { opacity: 1; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
         .interview-box { cursor: pointer; transition: all 0.1s; border: 1px solid #f1f5f9; }
-        .interview-box:hover { background-color: #f1f5f9; }
         .single-view-container { max-height: calc(100vh - 220px); overflow-y: auto; }
         
-        .loading-overlay { position: fixed; inset: 0; background: #fff; display: flex; justify-content: center; items-center; z-index: 9999; flex-direction: column; gap: 15px; }
+        .loading-overlay { position: fixed; inset: 0; background: #fff; display: flex; justify-content: center; align-items: center; z-index: 9999; flex-direction: column; gap: 15px; }
         .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .is-loading-data { opacity: 0.5; pointer-events: none; }
+        .locked-badge { background: #fee2e2; color: #ef4444; border: 1px solid #fca5a5; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        .auto-locked-badge { background: #fef3c7; color: #d97706; border: 1px solid #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+        
+        /* 師傅時段專用樣式 */
+        .hourly-grid { display: grid; grid-template-columns: 80px repeat(10, 1fr) 60px; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect } = window.React;
+        const { useState, useMemo, useEffect, useRef } = window.React;
         const firebase = window.firebase;
 
-        // --- 2026 國定假日數據庫 (春節修正為 2/14 - 2/22) ---
-        const PRESET_2026_HOLIDAYS = [
-            { date: "2026-01-01", name: "元旦" },
-            { date: "2026-02-14", name: "除夕" },
-            { date: "2026-02-15", name: "初一" },
-            { date: "2026-02-16", name: "初二" },
-            { date: "2026-02-17", name: "初三" },
-            { date: "2026-02-18", name: "初四" },
-            { date: "2026-02-19", name: "初五" },
-            { date: "2026-02-20", name: "春節連假" },
-            { date: "2026-02-21", name: "春節連假" },
-            { date: "2026-02-22", name: "春節連假" },
-            { date: "2026-02-28", name: "和平紀念日" },
-            { date: "2026-04-04", name: "兒童節" },
-            { date: "2026-04-05", name: "清明節" },
-            { date: "2026-05-01", name: "勞動節" },
-            { date: "2026-06-19", name: "端午節" },
-            { date: "2026-09-25", name: "中秋節" },
-            { date: "2026-10-10", name: "國慶日" }
-        ];
+        // --- 設定 ---
+        const UNLOCK_PASSWORD = "1016";
+        const TIMES = ["8:00", "9:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"];
 
-        const PRESET_COLORS = {
-            "05": "#3B82F6", "58": "#3B82F6", "69": "#3B82F6",
-            "03": "#EF4444", "06": "#EF4444", "07": "#EF4444", "11": "#EF4444", "18": "#EF4444", 
-            "20": "#EF4444", "27": "#EF4444", "32": "#EF4444", "33": "#EF4444", "35": "#EF4444", 
-            "37": "#EF4444", "39": "#EF4444", "57": "#EF4444", "60": "#EF4444", "62": "#EF4444", 
-            "65": "#EF4444", "66": "#EF4444", "68": "#EF4444", "76": "#EF4444", "77": "#EF4444", 
-            "80": "#EF4444", "88": "#EF4444", "89": "#EF4444", "90": "#EF4444",
-            "02": "#000000", "08": "#000000", "09": "#000000", "10": "#000000", "16": "#000000", 
-            "17": "#000000", "22": "#000000", "25": "#000000", "28": "#000000", "30": "#000000", 
-            "31": "#000000", "38": "#000000", "52": "#000000", "53": "#000000", "55": "#000000", 
-            "59": "#000000", "67": "#000000", "70": "#000000", "79": "#000000", "81": "#000000", 
-            "82": "#000000", "83": "#000000", "86": "#000000", "91": "#000000", "93": "#000000", 
-            "96": "#000000", "97": "#000000", "98": "#000000", "99": "#000000", "100": "#000000", "101": "#000000"
-        };
-
-        const INITIAL_STATE = {
-            holidays: PRESET_2026_HOLIDAYS,
-            colorMap: PRESET_COLORS,
-            counterStaff: ["行政 A", "行政 B"],
-            supervisorList: [
-                { id: 'A', color: "#9333EA", label: "世傑" }, 
-                { id: 'B', color: "#DB2777", label: "信吉" },
-                { id: 'C', color: "#0891B2", label: "麥麥" }, 
-                { id: 'D', color: "#EA580C", label: "蕾蕾" },
-                { id: 'E', color: "#65A30D", label: "楷翔" }, 
-                { id: 'F', color: "#4F46E5", label: "小汝" }
-            ]
-        };
-
-        // --- 您提供的 Firebase 配置 ---
-        const firebaseConfig = {
+        // --- Firebase 配置 ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
             apiKey: "AIzaSyAnDSWvDCH1YyvmG9tnmdmtduOOxnbDHos",
             authDomain: "master-schdule.firebaseapp.com",
             projectId: "master-schdule",
             storageBucket: "master-schdule.firebasestorage.app",
             messagingSenderId: "916703230059",
-            appId: "1:916703230059:web:1229143df631cf9f32192e",
-            measurementId: "G-R6KRBD0ZWQ"
+            appId: "1:916703230059:web:1229143df631cf9f32192e"
         };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'unlaosong-v17';
 
-        // 使用全域 firebase 變數初始化
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-            firebase.analytics();
-        }
-        
+        if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const appId = 'unlaosong-v17'; 
+
+        const COLOR_TYPES = {
+            MALE: { label: "男師", color: "#000000" },
+            FEMALE: { label: "女師", color: "#EF4444" },
+            ALL: { label: "大全", color: "#3B82F6" }
+        };
+
+        const INITIAL_STATE = { holidays: [], colorMap: {}, counterStaff: [], supervisorList: [], locks: {} };
+
+        // --- UI 組件: 彈出視窗 ---
+        const CustomModal = ({ title, message, onConfirm, onCancel, showInput, inputValue, setInputValue, confirmText = "確認", cancelText = "取消" }) => (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border">
+                    <div className="bg-slate-900 p-4 text-white text-sm font-black tracking-widest uppercase">{title}</div>
+                    <div className="p-6">
+                        <p className="text-slate-600 text-sm font-bold mb-4 leading-relaxed">{message}</p>
+                        {showInput && (
+                            <input type="password" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+                                className="w-full border-2 border-slate-200 p-3 rounded-xl outline-none focus:border-indigo-600 text-center font-black tracking-widest"
+                                placeholder="請輸入密碼" autoFocus />
+                        )}
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={onCancel} className="flex-1 py-3 text-slate-400 font-black text-sm hover:bg-slate-50 rounded-xl transition-colors">{cancelText}</button>
+                            <button onClick={onConfirm} className="flex-1 py-3 bg-indigo-600 text-white font-black text-sm rounded-xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">{confirmText}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
 
         const App = () => {
             const [user, setUser] = useState(null);
             const [activeTab, setActiveTab] = useState('B');
-            const [year, setYear] = useState(2026);
-            const [month, setMonth] = useState(2);
+            
+            const now = new Date();
+            const [year, setYear] = useState(now.getFullYear());
+            const [month, setMonth] = useState(now.getMonth() + 1);
+            
             const [isInitialLoad, setIsInitialLoad] = useState(true);
-
+            const [isSyncing, setIsSyncing] = useState(false);
+            
             const [settings, setSettings] = useState(INITIAL_STATE);
             const [schedule, setSchedule] = useState({});
             const [interview, setInterview] = useState({});
+            const [hourlyData, setHourlyData] = useState({});
 
-            const monthKey = `${year}-${month}`;
+            const [newMasterId, setNewMasterId] = useState("");
+            const [newMasterType, setNewMasterType] = useState("MALE");
+            const [modalConfig, setModalConfig] = useState(null); 
+            const [passInput, setPassInput] = useState("");
 
-            // 安全性檢查 Helper
-            const checkExists = (snap) => {
-                if (!snap) return false;
-                return typeof snap.exists === 'function' ? snap.exists() : snap.exists;
+            const isLegacyDate = (y, m) => (y < 2026 || (y === 2026 && m < 3));
+            const currentKey = isLegacyDate(year, month) ? `${year}-${month}` : `${year}-${String(month).padStart(2, '0')}`;
+
+            const getAutoLockStatus = (y, m) => {
+                const today = new Date();
+                const nextMonthThird = new Date(y, m, 3);
+                return today >= nextMonthThird;
             };
+
+            const autoLocked = getAutoLockStatus(year, month);
+            const isLocked = settings?.locks?.[currentKey] !== undefined ? settings.locks[currentKey] : autoLocked;
 
             useEffect(() => {
                 const initAuth = async () => {
-                    try {
-                        await auth.signInAnonymously();
-                    } catch (err) {
-                        console.error("Auth Error:", err);
-                        setIsInitialLoad(false);
-                    }
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await auth.signInWithCustomToken(__initial_auth_token);
+                    } else { await auth.signInAnonymously(); }
                 };
                 initAuth();
-                const unsub = auth.onAuthStateChanged(u => { if(u) setUser(u); });
-                return () => unsub();
+                const unsubscribe = auth.onAuthStateChanged(setUser);
+                return () => unsubscribe();
             }, []);
 
             useEffect(() => {
                 if (!user) return;
-                const setRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global');
-                const unsub = setRef.onSnapshot(snap => {
-                    if (checkExists(snap)) {
-                        setSettings(snap.data());
-                    } else {
-                        setRef.set(INITIAL_STATE);
-                    }
-                    setIsInitialLoad(false);
-                }, (err) => {
-                    console.error("Sync Error:", err);
+                const settingsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global');
+                return settingsRef.onSnapshot((snap) => {
+                    if (snap.exists) {
+                        const data = snap.data();
+                        setSettings({
+                            holidays: data.holidays || [],
+                            colorMap: data.colorMap || {},
+                            counterStaff: data.counterStaff || [],
+                            supervisorList: data.supervisorList || [],
+                            locks: data.locks || {}
+                        });
+                    } else { setSettings(INITIAL_STATE); }
                     setIsInitialLoad(false);
                 });
-                return () => unsub();
             }, [user]);
 
             useEffect(() => {
                 if (!user) return;
-                const dataRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(monthKey);
-                const unsub = dataRef.onSnapshot(snap => {
-                    if (checkExists(snap)) {
-                        const d = snap.data();
-                        setSchedule(d.schedule || {});
-                        setInterview(d.interview || {});
-                    } else {
-                        setSchedule({});
-                        setInterview({});
-                    }
-                });
-                return () => unsub();
-            }, [user, monthKey]);
+                setIsSyncing(true);
+                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {};
 
-            const pushS = (val) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set(val);
-            const pushD = (sch, int) => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(monthKey).set({ schedule: sch, interview: int });
+                if (isLegacyDate(year, month)) {
+                    unsubLegacy = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(currentKey)
+                        .onSnapshot((snap) => {
+                            if (snap.exists) {
+                                const d = snap.data();
+                                setSchedule(d.schedule || {});
+                                setInterview(d.interview || {});
+                            } else { setSchedule({}); setInterview({}); }
+                            setIsSyncing(false);
+                        });
+                } else {
+                    unsubSch = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scheduleData').doc(currentKey)
+                        .onSnapshot((snap) => {
+                            setSchedule(snap.exists ? snap.data().content || {} : {});
+                            setIsSyncing(false);
+                        });
+                    unsubInt = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('interviewData').doc(currentKey)
+                        .onSnapshot((snap) => { setInterview(snap.exists ? snap.data().content || {} : {}); });
+                }
+
+                unsubHourly = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey)
+                    .onSnapshot((snap) => { setHourlyData(snap.exists ? snap.data().content || {} : {}); });
+
+                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); };
+            }, [user, currentKey]);
+
+            const pushS = (val) => { if (!user) return; db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set(val); };
+            
+            const pushScheduleData = (sch) => {
+                if (!user || isSyncing || isLocked) return;
+                if (isLegacyDate(year, month)) {
+                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(currentKey).set({ schedule: sch, interview, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                } else {
+                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('scheduleData').doc(currentKey).set({ content: sch, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                }
+            };
+
+            const pushInterviewData = (int) => {
+                if (!user || isSyncing || isLocked) return;
+                if (isLegacyDate(year, month)) {
+                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(currentKey).set({ schedule, interview: int, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                } else {
+                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('interviewData').doc(currentKey).set({ content: int, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                }
+            };
+
+            const pushHourlyData = (h) => {
+                if (!user || isLocked) return;
+                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey).set({ content: h, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            };
+
+            const handleToggleLock = () => {
+                if (isLocked) {
+                    setModalConfig({ type: 'unlock', title: '安全性驗證', message: '此月份已鎖定，請輸入 1016 以解鎖。', showInput: true });
+                } else {
+                    pushS({ ...settings, locks: { ...(settings?.locks || {}), [currentKey]: true } });
+                }
+            };
+
+            const confirmUnlock = () => {
+                if (passInput === UNLOCK_PASSWORD) {
+                    pushS({ ...settings, locks: { ...(settings?.locks || {}), [currentKey]: false } });
+                    setPassInput(""); setModalConfig(null);
+                } else { setModalConfig({ ...modalConfig, message: "密碼錯誤！" }); setPassInput(""); }
+            };
+
+            const masterCategoryStats = useMemo(() => {
+                const counts = { MALE: 0, FEMALE: 0, ALL: 0 };
+                Object.values(settings?.colorMap || {}).forEach(color => {
+                    if (color === COLOR_TYPES.MALE.color) counts.MALE++;
+                    else if (color === COLOR_TYPES.FEMALE.color) counts.FEMALE++;
+                    else if (color === COLOR_TYPES.ALL.color) counts.ALL++;
+                });
+                return counts;
+            }, [settings?.colorMap]);
 
             const stats = useMemo(() => {
-                const ids = Object.values(schedule).flat().map(v => v.trim()).filter(Boolean);
-                const masters = Object.keys(settings.colorMap);
+                const ids = Object.values(schedule || {}).flat().map(v => v ? v.trim() : "").filter(Boolean);
+                const masters = Object.keys(settings?.colorMap || {});
                 const missing = masters.filter(id => !new Set(ids).has(id)).sort((a,b)=>parseInt(a)-parseInt(b));
-                const sCount = {};
-                settings.supervisorList.forEach(s => sCount[s.color] = 0);
+                const sCount = {}; (settings?.supervisorList || []).forEach(s => sCount[s.color] = 0);
                 let mCount = 0, cCount = 0;
-                Object.keys(interview).forEach(id => {
-                    const col = interview[id];
-                    if(sCount.hasOwnProperty(col)) sCount[col]++;
-                    if(masters.includes(id)) mCount++;
-                    else if(settings.counterStaff.includes(id)) cCount++;
+                Object.keys(interview || {}).forEach(staffId => {
+                    const supervisorColor = interview[staffId];
+                    if (sCount.hasOwnProperty(supervisorColor)) sCount[supervisorColor]++;
+                    if (masters.includes(staffId)) mCount++;
+                    else if ((settings?.counterStaff || []).includes(staffId)) cCount++;
                 });
-                return { missing, total: mCount + cCount, mCount, cCount, sCount };
+                return { missing, total: Object.keys(interview || {}).length, mCount, cCount, sCount };
             }, [schedule, settings, interview]);
 
-            const [brush, setBrush] = useState(INITIAL_STATE.supervisorList[0].color);
+            const [brush, setBrush] = useState("#000");
+            useEffect(() => { if (settings?.supervisorList?.length > 0 && brush === "#000") setBrush(settings.supervisorList[0].color); }, [settings?.supervisorList]);
 
-            if (isInitialLoad) return <div className="loading-overlay"><div className="spinner"></div><p className="font-bold text-indigo-600 italic">系統連線中...</p></div>;
+            const handleAddOrUpdateMaster = () => {
+                if (!newMasterId.trim()) return;
+                const nextMap = { ...(settings?.colorMap || {}), [newMasterId.trim()]: COLOR_TYPES[newMasterType].color };
+                pushS({ ...settings, colorMap: nextMap });
+                setNewMasterId("");
+            };
+
+            const handleDeleteMaster = (id) => {
+                const nextMap = { ...(settings?.colorMap || {}) };
+                delete nextMap[id];
+                pushS({ ...settings, colorMap: nextMap });
+            };
+
+            if (isInitialLoad) return <div className="loading-overlay"><div className="spinner"></div><p className="font-black text-indigo-600">載入中...</p></div>;
 
             return (
                 <div className="min-h-screen flex flex-col">
+                    {modalConfig && <CustomModal title={modalConfig.title} message={modalConfig.message} showInput={modalConfig.showInput} inputValue={passInput} setInputValue={setPassInput} onConfirm={confirmUnlock} onCancel={() => setModalConfig(null)} />}
+
                     <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b">
                         <div className="flex items-center gap-4">
-                            <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase font-serif italic">不老松中清店</h1>
-                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold shadow-inner">
-                                {['A', 'B', 'C', 'D'].map(tab => (
+                            <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase italic">不老松中清店</h1>
+                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
+                                {['A', 'B', 'E', 'C', 'D'].map(tab => (
                                     <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
-                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='C'?'師傅顏色':'訪談標記'}
+                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='C'?'師傅顏色':'訪談標記'}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        <div className="text-xs font-bold text-slate-400 font-mono flex items-center gap-2">
-                            <select value={year} onChange={e=>setYear(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
-                                {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-                            </select>
-                            <span className="opacity-50">/</span>
-                            <select value={month} onChange={e=>setMonth(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
-                                {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{String(i+1).padStart(2, '0')}</option>)}
-                            </select>
+                        <div className="flex items-center gap-4">
+                            {isLocked && <span className="locked-badge">{autoLocked && settings?.locks?.[currentKey] === undefined ? "自動鎖定" : "鎖定中"}</span>}
+                            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-full border">
+                                <button onClick={handleToggleLock} className={`p-1 rounded-full ${isLocked ? 'text-red-500 bg-red-50' : 'text-slate-400'}`}>
+                                    {isLocked ? <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C9.243 2 7 4.243 7 7v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7c0-2.757-2.243-5-5-5zM9 7c0-1.654 1.346-3 3-3s3 1.346 3 3v3H9V7zm3 11a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 11V7a4 4 0 118 0v4m-8 0H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1m-11 0V7a4 4 0 118 0v4m-8 0h8"/></svg>}
+                                </button>
+                                <div className="text-xs font-bold text-slate-400 font-mono flex items-center gap-1">
+                                    <select value={year} onChange={e=>setYear(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
+                                        {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                    <span>/</span>
+                                    <select value={month} onChange={e=>setMonth(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
+                                        {[...Array(12)].map((_, i) => <option key={i+1} value={i+1}>{String(i+1).padStart(2, '0')}</option>)}
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                     </nav>
 
-                    <main className="flex-1 max-w-7xl mx-auto w-full p-4 mb-10 overflow-hidden">
+                    <main className={`flex-1 max-w-7xl mx-auto w-full p-4 mb-10 overflow-hidden ${isSyncing ? 'is-loading-data' : ''}`}>
                         {activeTab === 'A' && (
                             <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn">
-                                <h2 className="text-xl font-bold mb-4 tracking-widest uppercase font-black text-slate-800">2026 國定假日管理</h2>
+                                <h2 className="text-xl font-bold mb-4 uppercase text-slate-800 tracking-widest font-black">國定假日管理</h2>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                    <div className="bg-slate-50 p-4 rounded-lg border">
-                                        <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase">新增或編輯假日</h3>
+                                    <div className={`bg-slate-50 p-4 rounded-lg border ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                        <h3 className="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wider font-black">新增編輯假日</h3>
                                         <div className="space-y-3">
-                                            <input id="hn" className="w-full border p-2 rounded text-sm font-bold outline-none" placeholder="節日名稱" />
-                                            <input id="hd" type="date" className="w-full border p-2 rounded text-sm font-mono" />
+                                            <input id="hn" className="w-full border p-2 rounded text-sm font-bold outline-none focus:border-indigo-500" placeholder="節日名稱" />
+                                            <input id="hd" type="date" className="w-full border p-2 rounded text-sm font-mono outline-none" />
                                             <button onClick={()=>{
                                                 const n=document.getElementById('hn').value, d=document.getElementById('hd').value;
-                                                if(n&&d){ const next={...settings, holidays:[...settings.holidays.filter(x=>x.date!==d), {date:d, name:n}]}; setSettings(next); pushS(next); }
-                                            }} className="w-full bg-indigo-600 text-white py-2 rounded font-black shadow hover:bg-indigo-700 transition-colors">儲存至雲端</button>
+                                                if(n&&d){ pushS({ ...settings, holidays: [...(settings?.holidays || []).filter(x=>x.date!==d), {date:d, name:n}]}); }
+                                            }} className="w-full bg-indigo-600 text-white py-2 rounded font-black shadow hover:bg-indigo-700 active:scale-95 transition-all">儲存至雲端</button>
                                         </div>
                                     </div>
-                                    <div className="max-h-[60vh] overflow-y-auto custom-scrollbar border rounded p-2 bg-white">
-                                        {settings.holidays.sort((a,b)=>a.date.localeCompare(b.date)).map(h => (
+                                    <div className="max-h-[60vh] overflow-y-auto border rounded p-2 bg-white custom-scrollbar">
+                                        {(settings?.holidays || []).sort((a,b)=>a.date.localeCompare(b.date)).map(h => (
                                             <div key={h.date} className="py-2 px-3 border-b flex justify-between group hover:bg-red-50">
                                                 <span className="font-mono text-sm font-bold">{h.date} <span className="text-red-500 ml-4 font-black">{h.name}</span></span>
-                                                <button onClick={()=>{const next={...settings, holidays:settings.holidays.filter(x=>x.date!==h.date)}; setSettings(next); pushS(next);}} className="text-red-300 opacity-0 group-hover:opacity-100 hover:text-red-600 font-black">✕</button>
+                                                {!isLocked && <button onClick={()=>pushS({...settings, holidays:settings.holidays.filter(x=>x!==h)})} className="text-red-300 opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity">✕</button>}
                                             </div>
                                         ))}
                                     </div>
@@ -281,50 +360,44 @@
                         {activeTab === 'B' && (
                             <div className="animate-fadeIn">
                                 <div className="flex justify-between items-end mb-4 print-hidden">
-                                    <div className="flex-1">
-                                        <h2 className="font-black text-slate-800 text-lg uppercase tracking-wider mb-2">排班主表</h2>
-                                        <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded shadow-sm text-sm">
-                                            <span className="font-black text-amber-900 mr-2 underline tracking-widest">未排號碼盤點：</span>
-                                            <span className="font-mono text-amber-700 font-bold break-all leading-relaxed">{stats.missing.join(', ') || '✅ 所有人員皆已排入'}</span>
-                                        </div>
-                                    </div>
-                                    <button onClick={()=>window.print()} className="bg-slate-800 text-white px-8 py-3 rounded-full text-sm font-black shadow-xl hover:bg-black active:scale-95 ml-6">列印 A4</button>
+                                    <h2 className="font-black text-slate-800 text-lg uppercase tracking-widest">排班主表 (月)</h2>
+                                    <button onClick={()=>window.print()} className="bg-slate-800 text-white px-8 py-3 rounded-full text-sm font-black shadow-xl hover:bg-black active:scale-95 transition-all">列印 A4</button>
                                 </div>
-                                <div className="print-area bg-white border-2 border-slate-900 mx-auto overflow-hidden shadow-2xl">
-                                    <div className="flex border-b border-slate-900 font-bold p-1 bg-white items-center header-info">
-                                        <div className="w-24 border-r border-slate-900 text-[10px] flex justify-center font-black uppercase">不老松中清店</div>
+                                <div className="bg-amber-50 border border-amber-200 px-4 py-2 rounded shadow-sm text-sm mb-4 print-hidden">
+                                    <span className="font-black text-amber-900 mr-2 underline tracking-widest">未排人員盤點：</span>
+                                    <span className="font-mono text-amber-700 font-bold break-all leading-relaxed tracking-tighter">{stats.missing.join(', ') || '✅ 本月所有編號皆已排入'}</span>
+                                </div>
+                                <div className="print-area bg-white border-2 border-slate-900 mx-auto overflow-hidden shadow-2xl relative">
+                                    {isLocked && <div className="absolute inset-0 bg-slate-500/5 z-10 pointer-events-none"></div>}
+                                    <div className="flex border-b border-slate-900 font-bold p-1 bg-white items-center">
+                                        <div className="w-24 border-r border-slate-900 text-[10px] text-center font-black uppercase tracking-tighter">中清不老松</div>
                                         <div className="flex-1 text-center text-base tracking-[0.2em] font-black uppercase"><span className="text-orange-600">{month}月</span>無法排班表</div>
                                     </div>
                                     <table className="w-full border-collapse text-[10px] table-fixed">
                                         <thead><tr className="bg-slate-50 border-b border-slate-900 font-bold uppercase tracking-tighter">
                                             <th className="border-r w-8 py-1">日</th><th className="border-r w-12 text-center">週</th>
-                                            <th className="border-r bg-blue-50/50 w-[30%]">早班 (08-11)</th>
-                                            <th className="border-r bg-red-50/50 w-[30%]">午班 (12-17)</th>
-                                            <th className="bg-green-50/50 w-[30%]">夜班 (18-20)</th>
+                                            <th className="border-r bg-blue-50/50 w-[30%]">早班 (08-11)</th><th className="border-r bg-red-50/50 w-[30%]">午班 (12-17)</th><th className="bg-green-50/50 w-[30%]">夜班 (18-20)</th>
                                         </tr></thead>
                                         <tbody>
                                             {Array.from({length: new Date(year, month, 0).getDate()}, (_,i)=>i+1).map(day => {
                                                 const dObj = new Date(year, month-1, day);
-                                                const dStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                                                const h = settings.holidays.find(x=>x.date===dStr);
-                                                const isH = !!h || dObj.getDay()===0 || dObj.getDay()===6;
+                                                const isH = dObj.getDay()===0 || dObj.getDay()===6;
                                                 const clr = isH ? 'text-red-600' : 'text-slate-800';
                                                 return (
                                                     <tr key={day} className="border-b h-[24px]">
                                                         <td className={`border-r text-center font-black ${clr}`}>{day}</td>
-                                                        <td className={`border-r text-center ${clr} flex flex-col justify-center leading-none h-full`}>
-                                                            <div className="text-[10px] font-bold">({['日','一','二','三','四','五','六'][dObj.getDay()]})</div>
-                                                            {h && <div className="text-[6px] scale-[0.6] font-black leading-tight truncate">{h.name}</div>}
-                                                        </td>
+                                                        <td className={`border-r text-center ${clr} font-bold`}>({['日','一','二','三','四','五','六'][dObj.getDay()]})</td>
                                                         {['early', 'middle', 'late'].map((shift, idx) => (
                                                             <td key={shift} className={`p-0 border-r ${idx===2?'border-r-0':''} ${shift==='early'?'bg-blue-50/5':shift==='middle'?'bg-red-50/5':'bg-green-50/5'}`}>
-                                                                <div className="grid grid-cols-8 h-full relative group">
+                                                                <div className="grid grid-cols-8 h-full">
                                                                     {(schedule[`${day}-${shift}`] || Array(8).fill('')).map((v, sIdx) => (
-                                                                        <input key={sIdx} className="w-full h-full text-center font-black text-sm outline-none slot-input border-r border-slate-100 last:border-r-0" style={{ color: settings.colorMap[v.trim()] || '#000' }} value={v} onChange={e => {
-                                                                            const key=`${day}-${shift}`; const slots = schedule[key] || Array(8).fill('');
-                                                                            const next=[...slots]; next[sIdx]=e.target.value; const nextSch={...schedule,[key]:next};
-                                                                            setSchedule(nextSch); pushD(nextSch, interview);
-                                                                        }} />
+                                                                        <input key={sIdx} className="w-full h-full text-center font-black text-sm outline-none slot-input border-r border-slate-100 last:border-r-0" 
+                                                                               style={{ color: (settings?.colorMap || {})[v.trim()] || '#000' }} value={v} disabled={isLocked}
+                                                                               onChange={e => {
+                                                                                    const key=`${day}-${shift}`; const slots = [...(schedule[key] || Array(8).fill(''))];
+                                                                                    slots[sIdx]=e.target.value; const nextSch={...schedule,[key]:slots};
+                                                                                    setSchedule(nextSch); pushScheduleData(nextSch);
+                                                                               }} />
                                                                     ))}
                                                                 </div>
                                                             </td>
@@ -338,14 +411,84 @@
                             </div>
                         )}
 
+                        {activeTab === 'E' && (
+                            <div className="animate-fadeIn">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase font-black">師傅時段排班 <span className="text-indigo-600">[{year}年{month}月]</span></h2>
+                                    <div className="flex gap-2 text-xs font-black">
+                                        <div className="bg-slate-100 px-3 py-1 rounded shadow-sm text-slate-500 uppercase font-black">
+                                            月度在線人數統計: <span className="text-indigo-600 ml-1 font-black">{new Set(Object.values(hourlyData).flat().filter(Boolean)).size}</span> 位
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-white border-2 border-slate-900 shadow-xl overflow-hidden relative">
+                                    {isLocked && <div className="absolute inset-0 bg-slate-500/5 z-10 pointer-events-none"></div>}
+                                    <div className="hourly-grid bg-slate-800 text-white font-black text-center text-[10px] py-1 uppercase tracking-widest border-b border-slate-900">
+                                        <div>整點時段</div>{Array.from({length:10}, (_,i)=>i+1).map(n=><div key={n} className="border-l border-slate-700">{n}</div>)}<div className="border-l border-slate-700 bg-slate-700 font-black">合計</div>
+                                    </div>
+                                    <div className="divide-y divide-slate-200">
+                                        {TIMES.map(time => {
+                                            const slots = hourlyData[time] || Array(10).fill("");
+                                            const activeCount = slots.filter(Boolean).length;
+                                            return (
+                                                <div key={time} className="hourly-grid h-8 items-center bg-white hover:bg-slate-50 transition-colors">
+                                                    <div className="bg-slate-100 h-full flex items-center justify-center font-black text-[10px] border-r border-slate-300 uppercase">{time}</div>
+                                                    {slots.map((v, i) => (
+                                                        <input key={i} className="w-full h-full text-center font-black text-xs outline-none border-r border-slate-100 last:border-r-0"
+                                                               style={{ color: (settings?.colorMap || {})[v.trim()] || '#000' }} value={v} disabled={isLocked}
+                                                               onChange={e => {
+                                                                   const nextSlots = [...slots]; nextSlots[i] = e.target.value;
+                                                                   const nextHourlyData = { ...hourlyData, [time]: nextSlots };
+                                                                   setHourlyData(nextHourlyData); pushHourlyData(nextHourlyData);
+                                                               }} />
+                                                    ))}
+                                                    <div className="bg-indigo-50 h-full flex items-center justify-center font-black text-xs text-indigo-700 border-l border-indigo-200">{activeCount}</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'C' && (
-                            <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn h-full overflow-y-auto custom-scrollbar text-center">
-                                <div className="flex justify-between items-center mb-6 border-b pb-4"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest">師傅配色管理</h2><div className="bg-indigo-600 px-4 py-2 rounded-lg text-white shadow-lg flex flex-col items-end"><span className="text-[10px] font-bold uppercase opacity-80 tracking-widest">師傅總量</span><span className="text-xl font-black">{Object.keys(settings.colorMap).length} 位</span></div></div>
+                            <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn h-full overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-center mb-6 border-b pb-4">
+                                    <h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest font-black">師傅配色管理</h2>
+                                    <div className="flex gap-2">
+                                        {Object.entries(masterCategoryStats || {}).map(([k,v])=>(
+                                            <div key={k} className="px-3 py-1.5 rounded-lg text-white shadow text-[10px] font-black uppercase tracking-tighter" style={{backgroundColor: COLOR_TYPES[k]?.color || '#666'}}>
+                                                {COLOR_TYPES[k]?.label || k}: {v}
+                                            </div>
+                                        ))}
+                                        <div className="bg-indigo-600 px-4 py-1.5 rounded-lg text-white shadow text-[10px] font-black uppercase tracking-widest">
+                                            總人數: {Object.keys(settings?.colorMap || {}).length}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className={`bg-slate-50 p-4 rounded-xl border mb-6 flex flex-wrap gap-4 items-end ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-black">師傅編號</label>
+                                        <input value={newMasterId} onChange={e=>setNewMasterId(e.target.value)} className="border p-2 rounded text-sm font-black w-24 outline-none focus:border-indigo-500" placeholder="08" />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {Object.entries(COLOR_TYPES).map(([k,v])=>(
+                                            <button key={k} onClick={()=>setNewMasterType(k)} className={`px-4 py-2 rounded text-[10px] font-black border-2 transition-all ${newMasterType===k?'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm':'bg-white text-slate-400 border-slate-100 hover:border-slate-300'}`}>{v.label}</button>
+                                        ))}
+                                    </div>
+                                    <button onClick={handleAddOrUpdateMaster} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-black text-sm shadow hover:bg-indigo-700 active:scale-95 transition-all">新增或修改配色</button>
+                                </div>
                                 <div className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-10 gap-3">
-                                    {Object.entries(settings.colorMap).sort((a,b)=>parseInt(a[0])-parseInt(b[0])).map(([id, color]) => (
-                                        <div key={id} className="p-2 border rounded-xl bg-white shadow-sm hover:scale-110 transition-all border-slate-100">
-                                            <span className="font-mono text-base font-black" style={{ color }}>{id}</span>
-                                            <span className={`text-[8px] text-white px-1.5 rounded font-bold block mt-1 ${color==='#000'?'bg-slate-800':color==='#EF4444'?'bg-red-500':'bg-blue-500'}`}>{color==='#000'?'男師':color==='#EF4444'?'女師':'大全'}</span>
+                                    {Object.entries(settings?.colorMap || {}).sort((a,b)=>{
+                                        const numA = parseInt(a[0]); const numB = parseInt(b[0]);
+                                        if (isNaN(numA)) return 1; if (isNaN(numB)) return -1;
+                                        return numA - numB;
+                                    }).map(([id, color]) => (
+                                        <div key={id} className="relative p-2 border rounded-xl bg-white shadow-sm font-black text-center group hover:scale-105 transition-all shadow-inner border-slate-100" style={{ color: color || '#000' }}>
+                                            {id}
+                                            {!isLocked && (
+                                                <button onClick={()=>handleDeleteMaster(id)} className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex items-center justify-center">✕</button>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -354,80 +497,76 @@
 
                         {activeTab === 'D' && (
                             <div className="flex flex-col h-full animate-fadeIn gap-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print-hidden">
-                                    <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-col justify-between">
-                                        <h3 className="text-xs font-black text-slate-400 mb-2 uppercase tracking-widest text-center">主管名單維護</h3>
+                                <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                    <div className="bg-white p-3 rounded-xl border shadow-sm">
+                                        <h3 className="text-xs font-black text-slate-400 mb-2 uppercase tracking-widest text-center font-black">主管名單維護</h3>
                                         <div className="grid grid-cols-2 gap-2">
-                                            {settings.supervisorList.map((s, idx) => (
+                                            {(settings?.supervisorList || []).map((s, i) => (
                                                 <input key={s.id} value={s.label} onChange={e => {
-                                                    const nextL=[...settings.supervisorList]; nextL[idx].label=e.target.value;
-                                                    const nextS={...settings, supervisorList:nextL}; setSettings(nextS); pushS(nextS);
-                                                }} className="text-[10px] border p-1 rounded font-bold outline-none focus:border-indigo-300 transition-all" style={{ borderLeft:`4px solid ${s.color}` }} />
+                                                    const nextL=[...(settings?.supervisorList || [])]; nextL[i].label=e.target.value;
+                                                    pushS({...settings, supervisorList:nextL});
+                                                }} className="text-[10px] border p-1 rounded font-black outline-none focus:border-indigo-300" style={{ borderLeft:`4px solid ${s.color}` }} />
                                             ))}
                                         </div>
                                     </div>
-                                    <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-col gap-2 text-center">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">櫃台團隊維護</h3>
-                                        <input className="w-full border p-1 rounded text-xs font-bold outline-none focus:border-indigo-300" placeholder="按 Enter 新增人員" onKeyPress={e=>{ if(e.key==='Enter'&&e.target.value){ const nextS={...settings, counterStaff:[...settings.counterStaff, e.target.value]}; setSettings(nextS); pushS(nextS); e.target.value=""; }}} />
+                                    <div className="bg-white p-3 rounded-xl border shadow-sm">
+                                        <h3 className="text-xs font-black text-slate-400 mb-2 uppercase text-center tracking-widest font-black">櫃台團隊維護</h3>
+                                        <input className="w-full border p-1 rounded text-xs mb-2 outline-none focus:border-indigo-300 font-black" placeholder="Enter 新增人員" onKeyPress={e=>{ if(e.key==='Enter'&&e.target.value){ pushS({...settings, counterStaff:[...(settings?.counterStaff||[]), e.target.value]}); e.target.value=""; }}} />
                                         <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar shadow-inner p-1">
-                                            {settings.counterStaff.map(n => <div key={n} className="bg-slate-50 border px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 font-bold">{n}<button onClick={()=>{const nextS={...settings, counterStaff:settings.counterStaff.filter(x=>x!==n)}; setSettings(nextS); pushS(nextS);}} className="text-red-400 hover:text-red-600 transition-colors pl-1 font-black text-xs">✕</button></div>)}
+                                            {(settings?.counterStaff || []).map(n => <div key={n} className="bg-slate-50 border px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">{n}<button onClick={()=>pushS({...settings, counterStaff:settings.counterStaff.filter(x=>x!==n)})} className="text-red-400 font-black hover:text-red-600">✕</button></div>)}
                                         </div>
                                     </div>
                                     <div className="bg-white p-3 rounded-xl border shadow-sm">
-                                        <div className="flex justify-between mb-1"><span className="text-xs font-black text-slate-400 uppercase tracking-widest">筆刷選擇</span><span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 rounded font-black shadow-sm">已完成: {stats.total} 位</span></div>
+                                        <div className="flex justify-between mb-2"><span className="text-xs font-black text-slate-400 uppercase tracking-widest font-black">主管訪談筆刷</span><span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 rounded shadow-sm">已完: {stats.total}</span></div>
                                         <div className="grid grid-cols-6 gap-1">
-                                            {settings.supervisorList.map(s => (
-                                                <button key={s.id} onClick={()=>setBrush(s.color)} className={`py-1 rounded border-2 flex flex-col items-center transition-all ${brush===s.color?'border-slate-800 shadow-md scale-105':'opacity-30 border-transparent grayscale'}`} style={{ backgroundColor: s.color, color: 'white' }}>
-                                                    <span className="text-[8px] font-black leading-none mb-1 truncate w-full">{s.label}</span>
-                                                    <span className="text-[10px] font-bold font-black">{stats.sCount[s.color]}</span>
+                                            {(settings?.supervisorList || []).map(s => (
+                                                <button key={s.id} onClick={()=>setBrush(s.color)} className={`py-1 rounded border-2 flex flex-col items-center transition-all ${brush===s.color?'border-slate-800 scale-105 shadow-md':'opacity-30 grayscale border-transparent'}`} style={{ backgroundColor: s.color, color: 'white' }}>
+                                                    <span className="text-[8px] font-black w-full truncate font-black">{s.label}</span>
+                                                    <span className="text-[10px] font-black">{stats.sCount[s.color]}</span>
                                                 </button>
                                             ))}
                                         </div>
                                     </div>
                                 </div>
-
-                                <div className="print-area bg-white border-2 border-slate-900 shadow-xl flex flex-col overflow-hidden max-h-screen">
-                                    <div className="flex border-b border-slate-900 font-bold p-2 items-center justify-center gap-4 bg-white text-center">
-                                        <span className="text-lg font-black uppercase text-indigo-700 tracking-widest">{month}月 員工績效訪談盤點報表</span>
-                                    </div>
-                                    <div className="single-view-container custom-scrollbar p-2">
-                                        <div className="mb-2 bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block shadow-sm uppercase font-serif">櫃台團隊 ({stats.cCount}/{settings.counterStaff.length})</div>
-                                        <div className="grid grid-cols-5 bg-slate-50 border-t border-indigo-600 mb-4 shadow-inner border-b">
-                                            {settings.counterStaff.map(n => (
-                                                <div key={n} onClick={()=>{ const next={...interview}; if(next[n]===brush) delete next[n]; else next[n]=brush; setInterview(next); pushD(schedule,next); }} className="interview-box p-1.5 flex items-center justify-between border-r border-b border-slate-200" style={{ backgroundColor: interview[n]?`${interview[n]}11`:'' }}>
-                                                    <span className="text-xs font-bold text-slate-700 font-black">{n}</span>
-                                                    <div className="w-5 h-5 rounded border flex items-center justify-center bg-white shadow-sm" style={{ backgroundColor: interview[n] || 'white' }}>{interview[n] && <span className="text-white text-[8px] font-black">✓</span>}</div>
+                                <div className="bg-white border-2 border-slate-900 shadow-xl flex flex-col relative overflow-hidden h-full min-h-[500px]">
+                                    {isLocked && <div className="absolute inset-0 bg-slate-500/5 z-10 pointer-events-none"></div>}
+                                    <div className="bg-slate-50 p-2 text-center font-black uppercase text-indigo-700 border-b border-slate-900 shadow-inner tracking-[0.2em] font-black">{month}月 員工績效訪談盤點報表</div>
+                                    <div className="single-view-container custom-scrollbar p-2 flex-1">
+                                        <div className="mb-2 bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase font-black shadow-sm">櫃台團隊 ({stats.cCount}/{settings?.counterStaff?.length || 0})</div>
+                                        <div className="grid grid-cols-5 bg-slate-50 border-t border-indigo-600 mb-4 border-b">
+                                            {(settings?.counterStaff || []).map(n => (
+                                                <div key={n} onClick={()=>{ if(isLocked) return; const next={...(interview || {})}; if(next[n]===brush) delete next[n]; else next[n]=brush; pushInterviewData(next); }} className="interview-box p-1.5 flex items-center justify-between border-r border-b hover:bg-white transition-colors" style={{ backgroundColor: interview[n]?`${interview[n]}11`:'' }}>
+                                                    <span className="text-xs font-black text-slate-700">{n}</span>
+                                                    <div className="w-5 h-5 rounded border bg-white flex items-center justify-center shadow-inner" style={{ backgroundColor: interview[n] || 'white' }}>{interview[n] && <span className="text-white text-[8px] font-black">✓</span>}</div>
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block shadow-sm uppercase font-serif">師傅團隊 ({stats.mCount}/{Object.keys(settings.colorMap).length})</div>
+                                        <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase tracking-widest font-black shadow-sm">師傅團隊 ({stats.mCount}/{Object.keys(settings?.colorMap || {}).length})</div>
                                         <div className="grid grid-cols-8 border-t border-slate-800 shadow-inner">
-                                            {Object.keys(settings.colorMap).sort((a,b)=>parseInt(a)-parseInt(b)).map(id => (
-                                                <div key={id} onClick={()=>{ const next={...interview}; if(next[id]===brush) delete next[id]; else next[id]=brush; setInterview(next); pushD(schedule,next); }} className="interview-box p-1 flex flex-col items-center border-r border-b border-slate-200 h-10 justify-center text-center" style={{ backgroundColor: interview[id]?`${interview[id]}11`:'' }}>
+                                            {Object.keys(settings?.colorMap || {}).sort((a,b)=>parseInt(a)-parseInt(b)).map(id => (
+                                                <div key={id} onClick={()=>{ if(isLocked) return; const next={...(interview || {})}; if(next[id]===brush) delete next[id]; else next[id]=brush; pushInterviewData(next); }} className="interview-box p-1 flex flex-col items-center border-r border-b h-12 justify-center group hover:bg-white transition-colors" style={{ backgroundColor: interview[id]?`${interview[id]}11`:'' }}>
                                                     <span className="font-mono text-xs font-black" style={{ color: settings.colorMap[id] }}>{id}</span>
-                                                    <div className="w-3 h-3 rounded-full border bg-white mt-0.5 shadow-inner" style={{ backgroundColor: interview[id] || 'white' }}></div>
-                                                    {interview[id] && <span className="text-[6px] font-bold text-slate-500 mt-0.5 truncate w-full scale-90 leading-tight tracking-tighter font-black">{settings.supervisorList.find(x=>x.color===interview[id])?.label}</span>}
+                                                    <div className="w-2.5 h-2.5 rounded-full border bg-white mt-1 shadow-inner" style={{ backgroundColor: interview[id] || 'white' }}></div>
+                                                    {interview[id] && <span className="text-[6px] font-black text-slate-400 mt-1 scale-90 truncate w-full text-center">{settings.supervisorList.find(x=>x.color===interview[id])?.label}</span>}
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
-                                    <div className="mt-auto border-t border-slate-900 bg-slate-50 p-2 flex justify-center gap-6 flex-wrap shadow-inner text-center">
-                                        {settings.supervisorList.map(s => <div key={s.id} className="flex items-center gap-1.5 text-[10px] font-black text-slate-700"><div className="w-3 h-3 rounded-sm shadow-sm" style={{ backgroundColor: s.color }}></div>{s.label}: {stats.sCount[s.color]} 人</div>)}
-                                        <div className="border-l border-slate-400 pl-6 font-black text-[10px] text-indigo-700 font-black">總訪談量：{stats.total} 位</div>
+                                    <div className="mt-auto bg-slate-100 p-2 flex justify-center gap-6 text-[10px] font-black text-slate-700 border-t border-slate-900 shadow-inner uppercase tracking-widest font-black">
+                                        {(settings?.supervisorList || []).map(s => <div key={s.id} className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm shadow-sm" style={{ backgroundColor: s.color }}></div>{s.label}: {stats.sCount[s.color]}</div>)}
+                                        <div className="border-l border-slate-300 pl-6 text-indigo-700 uppercase font-black">總訪談量: {stats.total} 位</div>
                                     </div>
                                 </div>
                             </div>
                         )}
                     </main>
 
-                    <footer className="bg-white border-t p-2 text-center text-[10px] text-slate-400 print-hidden fixed bottom-0 w-full z-50 flex justify-center gap-6 shadow-md bg-opacity-90 backdrop-blur-sm">
-                        <span className="uppercase tracking-widest font-black text-indigo-400 font-black tracking-[0.2em]">© 原點數位科技 - 雲端運營管理系統</span>
-                    </footer>
+                    <footer className="bg-white border-t p-2 text-center text-[10px] text-slate-400 fixed bottom-0 w-full z-50 uppercase tracking-[0.2em] font-black bg-opacity-90 backdrop-blur-sm">© 原點數位科技 - 雲端運營管理系統</footer>
                 </div>
             );
         };
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
+        const root = window.ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 </body>
