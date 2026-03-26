@@ -134,11 +134,15 @@
             const [schedule, setSchedule] = useState({});
             const [interview, setInterview] = useState({});
             const [hourlyData, setHourlyData] = useState({});
+            const [maintenanceRecords, setMaintenanceRecords] = useState([]);
 
             const [newMasterId, setNewMasterId] = useState("");
             const [newMasterType, setNewMasterType] = useState("MALE");
             const [modalConfig, setModalConfig] = useState(null); 
             const [passInput, setPassInput] = useState("");
+
+            // 維修紀錄表單 State
+            const [newMaint, setNewMaint] = useState({ date: new Date().toISOString().split('T')[0], time: "", item: "", cost: "", person: "", recorder: "" });
 
             const isLegacyDate = (y, m) => (y < 2026 || (y === 2026 && m < 3));
             const currentKey = isLegacyDate(year, month) ? `${year}-${month}` : `${year}-${String(month).padStart(2, '0')}`;
@@ -184,7 +188,7 @@
             useEffect(() => {
                 if (!user) return;
                 setIsSyncing(true);
-                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {};
+                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {}, unsubMaint = () => {};
 
                 if (isLegacyDate(year, month)) {
                     unsubLegacy = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(currentKey)
@@ -209,7 +213,15 @@
                 unsubHourly = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey)
                     .onSnapshot((snap) => { setHourlyData(snap.exists ? snap.data().content || {} : {}); });
 
-                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); };
+                // 維修紀錄：獨立集合，不隨月份切換而過濾 (除非要在前端自行按日期過濾)
+                unsubMaint = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('maintenanceRecords')
+                    .onSnapshot((snap) => {
+                        const list = [];
+                        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+                        setMaintenanceRecords(list.sort((a,b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time)));
+                    });
+
+                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); unsubMaint(); };
             }, [user, currentKey]);
 
             const pushS = (val) => { if (!user) return; db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set(val); };
@@ -235,6 +247,20 @@
             const pushHourlyData = (h) => {
                 if (!user || isLocked) return;
                 db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey).set({ content: h, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            };
+
+            const addMaintenanceRecord = () => {
+                if (!user || !newMaint.item) return;
+                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('maintenanceRecords').add({
+                    ...newMaint,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                setNewMaint({ date: new Date().toISOString().split('T')[0], time: "", item: "", cost: "", person: "", recorder: "" });
+            };
+
+            const deleteMaintenanceRecord = (id) => {
+                if (!user || isLocked) return;
+                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('maintenanceRecords').doc(id).delete();
             };
 
             const handleToggleLock = () => {
@@ -303,9 +329,9 @@
                         <div className="flex items-center gap-4">
                             <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase italic">不老松中清店</h1>
                             <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
-                                {['A', 'B', 'E', 'C', 'D'].map(tab => (
+                                {['A', 'B', 'E', 'C', 'D', 'F'].map(tab => (
                                     <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
-                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='C'?'師傅顏色':'訪談標記'}
+                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='C'?'師傅顏色':tab==='D'?'訪談標記':'維修紀錄'}
                                     </button>
                                 ))}
                             </div>
@@ -394,9 +420,9 @@
                                                                         <input key={sIdx} className="w-full h-full text-center font-black text-sm outline-none slot-input border-r border-slate-100 last:border-r-0" 
                                                                                style={{ color: (settings?.colorMap || {})[v.trim()] || '#000' }} value={v} disabled={isLocked}
                                                                                onChange={e => {
-                                                                                    const key=`${day}-${shift}`; const slots = [...(schedule[key] || Array(8).fill(''))];
-                                                                                    slots[sIdx]=e.target.value; const nextSch={...schedule,[key]:slots};
-                                                                                    setSchedule(nextSch); pushScheduleData(nextSch);
+                                                                                   const key=`${day}-${shift}`; const slots = [...(schedule[key] || Array(8).fill(''))];
+                                                                                   slots[sIdx]=e.target.value; const nextSch={...schedule,[key]:slots};
+                                                                                   setSchedule(nextSch); pushScheduleData(nextSch);
                                                                                }} />
                                                                     ))}
                                                                 </div>
@@ -555,6 +581,85 @@
                                     <div className="mt-auto bg-slate-100 p-2 flex justify-center gap-6 text-[10px] font-black text-slate-700 border-t border-slate-900 shadow-inner uppercase tracking-widest font-black">
                                         {(settings?.supervisorList || []).map(s => <div key={s.id} className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm shadow-sm" style={{ backgroundColor: s.color }}></div>{s.label}: {stats.sCount[s.color]}</div>)}
                                         <div className="border-l border-slate-300 pl-6 text-indigo-700 uppercase font-black">總訪談量: {stats.total} 位</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'F' && (
+                            <div className="animate-fadeIn h-full flex flex-col gap-4">
+                                <div className={`bg-white p-4 rounded-xl border shadow-sm ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                    <h2 className="text-lg font-black text-slate-800 mb-3 tracking-widest uppercase">新增維修紀錄</h2>
+                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">日期</label>
+                                            <input type="date" value={newMaint.date} onChange={e=>setNewMaint({...newMaint, date: e.target.value})} className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">時間</label>
+                                            <input type="time" value={newMaint.time} onChange={e=>setNewMaint({...newMaint, time: e.target.value})} className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">維修項目</label>
+                                            <input value={newMaint.item} onChange={e=>setNewMaint({...newMaint, item: e.target.value})} placeholder="例如: 冷氣清洗" className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">費用</label>
+                                            <input type="number" value={newMaint.cost} onChange={e=>setNewMaint({...newMaint, cost: e.target.value})} placeholder="金額" className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">處理人員</label>
+                                            <input value={newMaint.person} onChange={e=>setNewMaint({...newMaint, person: e.target.value})} placeholder="維修廠商/姓名" className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">填寫人員</label>
+                                            <input value={newMaint.recorder} onChange={e=>setNewMaint({...newMaint, recorder: e.target.value})} placeholder="您的姓名" className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
+                                    </div>
+                                    <button onClick={addMaintenanceRecord} className="mt-4 w-full bg-slate-800 text-white py-2 rounded-lg font-black text-sm shadow hover:bg-black active:scale-95 transition-all uppercase tracking-widest">新增至維修清單</button>
+                                </div>
+
+                                <div className="bg-white border-2 border-slate-900 shadow-xl flex-1 overflow-hidden flex flex-col min-h-[400px]">
+                                    <div className="bg-slate-50 p-2 text-center font-black uppercase text-indigo-700 border-b border-slate-900 tracking-[0.2em]">歷年維修紀錄總覽</div>
+                                    <div className="overflow-y-auto flex-1 custom-scrollbar">
+                                        <table className="w-full text-xs text-center border-collapse">
+                                            <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-300">
+                                                <tr className="font-black text-slate-500 uppercase tracking-tighter">
+                                                    <th className="py-2 px-2 border-r">日期</th>
+                                                    <th className="py-2 px-2 border-r">時間</th>
+                                                    <th className="py-2 px-2 border-r text-left">維修項目</th>
+                                                    <th className="py-2 px-2 border-r">費用</th>
+                                                    <th className="py-2 px-2 border-r">處理人</th>
+                                                    <th className="py-2 px-2 border-r">紀錄人</th>
+                                                    {!isLocked && <th className="py-2 px-2">操作</th>}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {maintenanceRecords.length === 0 ? (
+                                                    <tr><td colSpan="7" className="py-10 text-slate-300 font-bold italic">目前尚無維修紀錄</td></tr>
+                                                ) : (
+                                                    maintenanceRecords.map(m => (
+                                                        <tr key={m.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                                                            <td className="py-2 font-mono font-bold">{m.date}</td>
+                                                            <td className="py-2 font-mono">{m.time}</td>
+                                                            <td className="py-2 text-left font-black text-slate-700 px-2">{m.item}</td>
+                                                            <td className="py-2 font-black text-orange-600">NT$ {m.cost}</td>
+                                                            <td className="py-2 font-bold">{m.person}</td>
+                                                            <td className="py-2 font-bold text-slate-400">{m.recorder}</td>
+                                                            {!isLocked && (
+                                                                <td className="py-2">
+                                                                    <button onClick={() => deleteMaintenanceRecord(m.id)} className="text-red-300 hover:text-red-600 font-black">✕</button>
+                                                                </td>
+                                                            )}
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="bg-slate-100 p-2 border-t border-slate-900 flex justify-between px-6 text-[10px] font-black uppercase tracking-widest">
+                                        <div className="text-slate-500">總紀錄筆數: {maintenanceRecords.length} 筆</div>
+                                        <div className="text-orange-600 underline">總累計支出: NT$ {maintenanceRecords.reduce((acc, cur) => acc + (Number(cur.cost) || 0), 0)}</div>
                                     </div>
                                 </div>
                             </div>
