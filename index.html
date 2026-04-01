@@ -58,7 +58,6 @@
         
         .is-loading-data { opacity: 0.5; pointer-events: none; }
         .locked-badge { background: #fee2e2; color: #ef4444; border: 1px solid #fca5a5; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
-        .auto-locked-badge { background: #fef3c7; color: #d97706; border: 1px solid #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
         
         /* 師傅時段專用樣式 */
         .hourly-grid { display: grid; grid-template-columns: 80px repeat(10, 1fr) 60px; }
@@ -96,28 +95,55 @@
             ALL: { label: "大全", color: "#3B82F6" }
         };
 
-        const INITIAL_STATE = { holidays: [], colorMap: {}, counterStaff: [], supervisorList: [], locks: {} };
+        // 主管顏色配置
+        const DEFAULT_SUPERVISORS = [
+            { id: 's1', label: '主管1', color: '#4f46e5' }, // Indigo
+            { id: 's2', label: '主管2', color: '#10b981' }, // Emerald
+            { id: 's3', label: '主管3', color: '#f43f5e' }, // Rose
+            { id: 's4', label: '主管4', color: '#f59e0b' }, // Amber
+            { id: 's5', label: '主管5', color: '#06b6d4' }, // Cyan
+            { id: 's6', label: '主管6', color: '#d946ef' }, // Fuchsia
+            { id: 's7', label: '主管7', color: '#f97316' }, // Orange
+            { id: 's8', label: '主管8', color: '#334155' }  // Slate
+        ];
+
+        // V18 Modification: hiddenMasters 初始化為物件，存儲各月份隱藏清單
+        const INITIAL_STATE = { holidays: [], colorMap: {}, hiddenMasters: {}, counterStaff: [], supervisorList: DEFAULT_SUPERVISORS, locks: {} };
 
         // --- UI 組件: 彈出視窗 ---
-        const CustomModal = ({ title, message, onConfirm, onCancel, showInput, inputValue, setInputValue, confirmText = "確認", cancelText = "取消" }) => (
-            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border">
-                    <div className="bg-slate-900 p-4 text-white text-sm font-black tracking-widest uppercase">{title}</div>
-                    <div className="p-6">
-                        <p className="text-slate-600 text-sm font-bold mb-4 leading-relaxed">{message}</p>
-                        {showInput && (
-                            <input type="password" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-                                className="w-full border-2 border-slate-200 p-3 rounded-xl outline-none focus:border-indigo-600 text-center font-black tracking-widest"
-                                placeholder="請輸入密碼" autoFocus />
-                        )}
-                        <div className="flex gap-3 mt-6">
-                            <button onClick={onCancel} className="flex-1 py-3 text-slate-400 font-black text-sm hover:bg-slate-50 rounded-xl transition-colors">{cancelText}</button>
-                            <button onClick={onConfirm} className="flex-1 py-3 bg-indigo-600 text-white font-black text-sm rounded-xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">{confirmText}</button>
+        const CustomModal = ({ title, message, onConfirm, onCancel, showInput, inputValue, setInputValue, confirmText = "確認", cancelText = "取消" }) => {
+            
+            // V18 Modification: 新增鍵盤監聽 (Enter/ESC)
+            const handleKeyDown = (e) => {
+                if (e.key === 'Enter') onConfirm();
+                if (e.key === 'Escape' && onCancel) onCancel();
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border">
+                        <div className="bg-slate-900 p-4 text-white text-sm font-black tracking-widest uppercase">{title}</div>
+                        <div className="p-6">
+                            {message && (
+                                <p className="text-slate-600 text-sm font-bold mb-4 leading-relaxed">{message}</p>
+                            )}
+                            {showInput && (
+                                <input type="password" value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    className="w-full border-2 border-slate-200 p-3 rounded-xl outline-none focus:border-indigo-600 text-center font-black tracking-widest"
+                                    placeholder="請輸入密碼" autoFocus />
+                            )}
+                            <div className="flex gap-3 mt-6">
+                                {onCancel && (
+                                    <button onClick={onCancel} className="flex-1 py-3 text-slate-400 font-black text-sm hover:bg-slate-50 rounded-xl transition-colors">{cancelText}</button>
+                                )}
+                                <button onClick={onConfirm} className={`py-3 bg-indigo-600 text-white font-black text-sm rounded-xl shadow-lg hover:bg-indigo-700 active:scale-95 transition-all ${onCancel ? 'flex-1' : 'w-full'}`}>{confirmText}</button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        );
+            );
+        };
 
         const App = () => {
             const [user, setUser] = useState(null);
@@ -147,13 +173,26 @@
             const isLegacyDate = (y, m) => (y < 2026 || (y === 2026 && m < 3));
             const currentKey = isLegacyDate(year, month) ? `${year}-${month}` : `${year}-${String(month).padStart(2, '0')}`;
 
-            const getAutoLockStatus = (y, m) => {
-                const today = new Date();
-                const nextMonthThird = new Date(y, m, 3);
-                return today >= nextMonthThird;
+            // V18 Modification: 取得當前月份隱藏清單的共用邏輯
+            const hiddenList = useMemo(() => {
+                const hm = settings.hiddenMasters || {};
+                // 相容舊版陣列格式
+                if (Array.isArray(hm)) return hm;
+                return hm[currentKey] || [];
+            }, [settings.hiddenMasters, currentKey]);
+
+            // 計算上個月的 Key (用於資料繼承)
+            const getPrevMonthKey = (y, m) => {
+                let py = y, pm = m - 1;
+                if (pm === 0) { py = y - 1; pm = 12; }
+                return isLegacyDate(py, pm) ? `${py}-${pm}` : `${py}-${String(pm).padStart(2, '0')}`;
             };
 
-            const autoLocked = getAutoLockStatus(year, month);
+            const autoLocked = (() => {
+                const today = new Date();
+                const nextMonthThird = new Date(year, month, 3);
+                return today >= nextMonthThird;
+            })();
             const isLocked = settings?.locks?.[currentKey] !== undefined ? settings.locks[currentKey] : autoLocked;
 
             useEffect(() => {
@@ -173,11 +212,23 @@
                 return settingsRef.onSnapshot((snap) => {
                     if (snap.exists) {
                         const data = snap.data();
+                        
+                        // 自動補齊或修正主管名單，包含顏色更新邏輯
+                        let loadedList = data.supervisorList || [];
+                        if (loadedList.length < 8) {
+                            const needed = 8 - loadedList.length;
+                            const startIndex = loadedList.length;
+                            for (let i = 0; i < needed; i++) {
+                                loadedList.push(DEFAULT_SUPERVISORS[startIndex + i]);
+                            }
+                        }
+
                         setSettings({
                             holidays: data.holidays || [],
                             colorMap: data.colorMap || {},
+                            hiddenMasters: data.hiddenMasters || {}, // 確保為物件
                             counterStaff: data.counterStaff || [],
-                            supervisorList: data.supervisorList || [],
+                            supervisorList: loadedList,
                             locks: data.locks || {}
                         });
                     } else { setSettings(INITIAL_STATE); }
@@ -211,9 +262,26 @@
                 }
 
                 unsubHourly = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey)
-                    .onSnapshot((snap) => { setHourlyData(snap.exists ? snap.data().content || {} : {}); });
+                    .onSnapshot(async (snap) => {
+                        if (snap.exists) {
+                            setHourlyData(snap.data().content || {});
+                        } else {
+                            if (!isLocked) {
+                                const prevKey = getPrevMonthKey(year, month);
+                                const prevSnap = await db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(prevKey).get();
+                                if (prevSnap.exists) {
+                                    const prevContent = prevSnap.data().content || {};
+                                    setHourlyData(prevContent);
+                                    db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey).set({
+                                        content: prevContent,
+                                        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                        inheritedFrom: prevKey
+                                    });
+                                } else { setHourlyData({}); }
+                            } else { setHourlyData({}); }
+                        }
+                    });
 
-                // 維修紀錄：獨立集合，不隨月份切換而過濾 (除非要在前端自行按日期過濾)
                 unsubMaint = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('maintenanceRecords')
                     .onSnapshot((snap) => {
                         const list = [];
@@ -265,7 +333,7 @@
 
             const handleToggleLock = () => {
                 if (isLocked) {
-                    setModalConfig({ type: 'unlock', title: '安全性驗證', message: '此月份已鎖定，請輸入 1016 以解鎖。', showInput: true });
+                    setModalConfig({ type: 'unlock', title: '安全性驗證', message: '', showInput: true });
                 } else {
                     pushS({ ...settings, locks: { ...(settings?.locks || {}), [currentKey]: true } });
                 }
@@ -280,50 +348,76 @@
 
             const masterCategoryStats = useMemo(() => {
                 const counts = { MALE: 0, FEMALE: 0, ALL: 0 };
-                Object.values(settings?.colorMap || {}).forEach(color => {
+                Object.entries(settings?.colorMap || {}).forEach(([id, color]) => {
+                    // V18 Modification: 統計排除當前月份隱藏的人員
+                    if (hiddenList.includes(id)) return;
                     if (color === COLOR_TYPES.MALE.color) counts.MALE++;
                     else if (color === COLOR_TYPES.FEMALE.color) counts.FEMALE++;
                     else if (color === COLOR_TYPES.ALL.color) counts.ALL++;
                 });
                 return counts;
-            }, [settings?.colorMap]);
+            }, [settings?.colorMap, hiddenList]);
 
+            // V18 Modification: 修正人數統計邏輯，自動排除隱藏人員
             const stats = useMemo(() => {
-                const ids = Object.values(schedule || {}).flat().map(v => v ? v.trim() : "").filter(Boolean);
-                const masters = Object.keys(settings?.colorMap || {});
-                const missing = masters.filter(id => !new Set(ids).has(id)).sort((a,b)=>parseInt(a)-parseInt(b));
-                const sCount = {}; (settings?.supervisorList || []).forEach(s => sCount[s.color] = 0);
+                const scheduleIds = Object.values(schedule || {}).flat().map(v => v ? v.trim() : "").filter(Boolean);
+                // 僅計算當月可見的師傅
+                const visibleMasters = Object.keys(settings?.colorMap || {}).filter(id => !hiddenList.includes(id));
+                const counterStaff = settings?.counterStaff || [];
+                
+                // 計算未排班清單 (僅針對可見師傅)
+                const missing = visibleMasters.filter(id => !new Set(scheduleIds).has(id)).sort((a,b)=>parseInt(a)-parseInt(b));
+                
+                const sCount = {}; 
+                (settings?.supervisorList || []).forEach(s => sCount[s.color] = 0);
+                
                 let mCount = 0, cCount = 0;
+                
+                // 統計訪談數據 (僅針對可見師傅與現有櫃台人員)
                 Object.keys(interview || {}).forEach(staffId => {
                     const supervisorColor = interview[staffId];
-                    if (sCount.hasOwnProperty(supervisorColor)) sCount[supervisorColor]++;
-                    if (masters.includes(staffId)) mCount++;
-                    else if ((settings?.counterStaff || []).includes(staffId)) cCount++;
+                    if (visibleMasters.includes(staffId)) {
+                        mCount++;
+                        if (sCount.hasOwnProperty(supervisorColor)) sCount[supervisorColor]++;
+                    } else if (counterStaff.includes(staffId)) {
+                        cCount++;
+                        if (sCount.hasOwnProperty(supervisorColor)) sCount[supervisorColor]++;
+                    }
                 });
-                return { missing, total: Object.keys(interview || {}).length, mCount, cCount, sCount };
-            }, [schedule, settings, interview]);
+
+                // 總訪談人數應為可見師傅已訪量 + 櫃台已訪量
+                return { missing, total: mCount + cCount, mCount, cCount, sCount };
+            }, [schedule, settings, interview, hiddenList]);
 
             const [brush, setBrush] = useState("#000");
             useEffect(() => { if (settings?.supervisorList?.length > 0 && brush === "#000") setBrush(settings.supervisorList[0].color); }, [settings?.supervisorList]);
 
             const handleAddOrUpdateMaster = () => {
                 if (!newMasterId.trim()) return;
-                const nextMap = { ...(settings?.colorMap || {}), [newMasterId.trim()]: COLOR_TYPES[newMasterType].color };
-                pushS({ ...settings, colorMap: nextMap });
+                const id = newMasterId.trim();
+                const nextMap = { ...(settings?.colorMap || {}), [id]: COLOR_TYPES[newMasterType].color };
+                
+                // V18 Modification: 重啟師傅時，從當月隱藏清單移除
+                const currentMonthHidden = hiddenList.filter(x => x !== id);
+                const nextHidden = { ...(settings.hiddenMasters || {}), [currentKey]: currentMonthMonthHidden };
+                
+                pushS({ ...settings, colorMap: nextMap, hiddenMasters: nextHidden });
                 setNewMasterId("");
             };
 
-            const handleDeleteMaster = (id) => {
-                const nextMap = { ...(settings?.colorMap || {}) };
-                delete nextMap[id];
-                pushS({ ...settings, colorMap: nextMap });
+            const handleHideMaster = (id) => {
+                // V18 Modification: 將隱藏邏輯限制在當前月份
+                const nextHiddenList = Array.from(new Set([...hiddenList, id]));
+                const nextHiddenMap = { ...(settings.hiddenMasters || {}), [currentKey]: nextHiddenList };
+                pushS({ ...settings, hiddenMasters: nextHiddenMap });
             };
 
             if (isInitialLoad) return <div className="loading-overlay"><div className="spinner"></div><p className="font-black text-indigo-600">載入中...</p></div>;
 
             return (
                 <div className="min-h-screen flex flex-col">
-                    {modalConfig && <CustomModal title={modalConfig.title} message={modalConfig.message} showInput={modalConfig.showInput} inputValue={passInput} setInputValue={setPassInput} onConfirm={confirmUnlock} onCancel={() => setModalConfig(null)} />}
+                    {modalConfig && <CustomModal title={modalConfig.title} message={modalConfig.message} showInput={modalConfig.showInput} inputValue={passInput} setInputValue={setPassInput} onConfirm={confirmUnlock} 
+                        onCancel={modalConfig.type === 'unlock' ? null : () => setModalConfig(null)} />}
 
                     <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b">
                         <div className="flex items-center gap-4">
@@ -337,10 +431,10 @@
                             </div>
                         </div>
                         <div className="flex items-center gap-4">
-                            {isLocked && <span className="locked-badge">{autoLocked && settings?.locks?.[currentKey] === undefined ? "自動鎖定" : "鎖定中"}</span>}
+                            {isLocked && <span className="locked-badge">{settings?.locks?.[currentKey] === undefined ? "自動鎖定" : "鎖定中"}</span>}
                             <div className="flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-full border">
                                 <button onClick={handleToggleLock} className={`p-1 rounded-full ${isLocked ? 'text-red-500 bg-red-50' : 'text-slate-400'}`}>
-                                    {isLocked ? <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C9.243 2 7 4.243 7 7v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7c0-2.757-2.243-5-5-5zM9 7c0-1.654 1.346-3 3-3s3 1.346 3 3v3H9V7zm3 11a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 11V7a4 4 0 118 0v4m-8 0H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1m-11 0V7a4 4 0 118 0v4m-8 0h8"/></svg>}
+                                    {isLocked ? <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C9.243 2 7 4.243 7 7v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1m-11 0V7a4 4 0 118 0v4m-8 0h8"/></svg> : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 11V7a4 4 0 118 0v4m-8 0H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7c0-2.757-2.243-5-5-5zM9 7c0-1.654 1.346-3 3-3s3 1.346 3 3v3H9V7zm3 11a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>}
                                 </button>
                                 <div className="text-xs font-bold text-slate-400 font-mono flex items-center gap-1">
                                     <select value={year} onChange={e=>setYear(parseInt(e.target.value))} className="bg-transparent border-none outline-none cursor-pointer hover:text-indigo-600 font-black">
@@ -443,7 +537,7 @@
                                     <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase font-black">師傅時段排班 <span className="text-indigo-600">[{year}年{month}月]</span></h2>
                                     <div className="flex gap-2 text-xs font-black">
                                         <div className="bg-slate-100 px-3 py-1 rounded shadow-sm text-slate-500 uppercase font-black">
-                                            月度在線人數統計: <span className="text-indigo-600 ml-1 font-black">{new Set(Object.values(hourlyData).flat().filter(Boolean)).size}</span> 位
+                                            月度繼承狀態: <span className="text-indigo-600 ml-1 font-black">自動匯入上月資料</span>
                                         </div>
                                     </div>
                                 </div>
@@ -463,9 +557,9 @@
                                                         <input key={i} className="w-full h-full text-center font-black text-xs outline-none border-r border-slate-100 last:border-r-0"
                                                                style={{ color: (settings?.colorMap || {})[v.trim()] || '#000' }} value={v} disabled={isLocked}
                                                                onChange={e => {
-                                                                   const nextSlots = [...slots]; nextSlots[i] = e.target.value;
-                                                                   const nextHourlyData = { ...hourlyData, [time]: nextSlots };
-                                                                   setHourlyData(nextHourlyData); pushHourlyData(nextHourlyData);
+                                                                    const nextSlots = [...slots]; nextSlots[i] = e.target.value;
+                                                                    const nextHourlyData = { ...hourlyData, [time]: nextSlots };
+                                                                    setHourlyData(nextHourlyData); pushHourlyData(nextHourlyData);
                                                                }} />
                                                     ))}
                                                     <div className="bg-indigo-50 h-full flex items-center justify-center font-black text-xs text-indigo-700 border-l border-indigo-200">{activeCount}</div>
@@ -480,16 +574,13 @@
                         {activeTab === 'C' && (
                             <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn h-full overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-center mb-6 border-b pb-4">
-                                    <h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest font-black">師傅配色管理</h2>
+                                    <h2 className="text-2xl font-black text-slate-800 uppercase tracking-widest font-black">師傅配色管理 (不影響歷史記錄)</h2>
                                     <div className="flex gap-2">
                                         {Object.entries(masterCategoryStats || {}).map(([k,v])=>(
                                             <div key={k} className="px-3 py-1.5 rounded-lg text-white shadow text-[10px] font-black uppercase tracking-tighter" style={{backgroundColor: COLOR_TYPES[k]?.color || '#666'}}>
                                                 {COLOR_TYPES[k]?.label || k}: {v}
                                             </div>
                                         ))}
-                                        <div className="bg-indigo-600 px-4 py-1.5 rounded-lg text-white shadow text-[10px] font-black uppercase tracking-widest">
-                                            總人數: {Object.keys(settings?.colorMap || {}).length}
-                                        </div>
                                     </div>
                                 </div>
                                 <div className={`bg-slate-50 p-4 rounded-xl border mb-6 flex flex-wrap gap-4 items-end ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -502,10 +593,10 @@
                                             <button key={k} onClick={()=>setNewMasterType(k)} className={`px-4 py-2 rounded text-[10px] font-black border-2 transition-all ${newMasterType===k?'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm':'bg-white text-slate-400 border-slate-100 hover:border-slate-300'}`}>{v.label}</button>
                                         ))}
                                     </div>
-                                    <button onClick={handleAddOrUpdateMaster} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-black text-sm shadow hover:bg-indigo-700 active:scale-95 transition-all">新增或修改配色</button>
+                                    <button onClick={handleAddOrUpdateMaster} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-black text-sm shadow hover:bg-indigo-700 active:scale-95 transition-all">新增或重啟師傅</button>
                                 </div>
                                 <div className="grid grid-cols-4 md:grid-cols-8 lg:grid-cols-10 gap-3">
-                                    {Object.entries(settings?.colorMap || {}).sort((a,b)=>{
+                                    {Object.entries(settings?.colorMap || {}).filter(([id]) => !hiddenList.includes(id)).sort((a,b)=>{
                                         const numA = parseInt(a[0]); const numB = parseInt(b[0]);
                                         if (isNaN(numA)) return 1; if (isNaN(numB)) return -1;
                                         return numA - numB;
@@ -513,11 +604,28 @@
                                         <div key={id} className="relative p-2 border rounded-xl bg-white shadow-sm font-black text-center group hover:scale-105 transition-all shadow-inner border-slate-100" style={{ color: color || '#000' }}>
                                             {id}
                                             {!isLocked && (
-                                                <button onClick={()=>handleDeleteMaster(id)} className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex items-center justify-center">✕</button>
+                                                <button onClick={()=>handleHideMaster(id)} className="absolute -top-2 -right-2 bg-slate-400 text-white px-2 py-0.5 rounded-full text-[8px] font-black opacity-0 group-hover:opacity-100 transition-opacity shadow-lg flex items-center justify-center hover:bg-red-500" title="僅隱藏本月">隱藏</button>
                                             )}
                                         </div>
                                     ))}
                                 </div>
+                                {/* V18 Modification: 顯示已隱藏清單，方便取消隱藏 */}
+                                {hiddenList.length > 0 && (
+                                    <div className="mt-10 pt-6 border-t">
+                                        <h3 className="text-xs font-black text-slate-400 mb-4 uppercase tracking-widest font-black">本月已隱藏人員 (點擊恢復)</h3>
+                                        <div className="flex flex-wrap gap-2">
+                                            {hiddenList.map(id => (
+                                                <button key={id} onClick={() => {
+                                                    const nextList = hiddenList.filter(x => x !== id);
+                                                    const nextMap = { ...(settings.hiddenMasters || {}), [currentKey]: nextList };
+                                                    pushS({ ...settings, hiddenMasters: nextMap });
+                                                }} className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-xs font-black hover:bg-indigo-50 hover:text-indigo-600 transition-colors border border-dashed border-slate-300">
+                                                    {id} +
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -544,7 +652,7 @@
                                     </div>
                                     <div className="bg-white p-3 rounded-xl border shadow-sm">
                                         <div className="flex justify-between mb-2"><span className="text-xs font-black text-slate-400 uppercase tracking-widest font-black">主管訪談筆刷</span><span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 rounded shadow-sm">已完: {stats.total}</span></div>
-                                        <div className="grid grid-cols-6 gap-1">
+                                        <div className="grid grid-cols-4 md:grid-cols-8 gap-1">
                                             {(settings?.supervisorList || []).map(s => (
                                                 <button key={s.id} onClick={()=>setBrush(s.color)} className={`py-1 rounded border-2 flex flex-col items-center transition-all ${brush===s.color?'border-slate-800 scale-105 shadow-md':'opacity-30 grayscale border-transparent'}`} style={{ backgroundColor: s.color, color: 'white' }}>
                                                     <span className="text-[8px] font-black w-full truncate font-black">{s.label}</span>
@@ -561,15 +669,18 @@
                                         <div className="mb-2 bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase font-black shadow-sm">櫃台團隊 ({stats.cCount}/{settings?.counterStaff?.length || 0})</div>
                                         <div className="grid grid-cols-5 bg-slate-50 border-t border-indigo-600 mb-4 border-b">
                                             {(settings?.counterStaff || []).map(n => (
-                                                <div key={n} onClick={()=>{ if(isLocked) return; const next={...(interview || {})}; if(next[n]===brush) delete next[n]; else next[n]=brush; pushInterviewData(next); }} className="interview-box p-1.5 flex items-center justify-between border-r border-b hover:bg-white transition-colors" style={{ backgroundColor: interview[n]?`${interview[n]}11`:'' }}>
+                                                <div key={n} onClick={()=>{ if(isLocked) return; const next={...(interview || {})}; if(next[n]===brush) delete next[n]; else next[n]=brush; pushInterviewData(next); }} 
+                                                     className="interview-box p-1.5 flex items-center justify-start gap-2 border-r border-b hover:bg-white transition-colors" 
+                                                     style={{ backgroundColor: interview[n]?`${interview[n]}11`:'' }}>
                                                     <span className="text-xs font-black text-slate-700">{n}</span>
                                                     <div className="w-5 h-5 rounded border bg-white flex items-center justify-center shadow-inner" style={{ backgroundColor: interview[n] || 'white' }}>{interview[n] && <span className="text-white text-[8px] font-black">✓</span>}</div>
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase tracking-widest font-black shadow-sm">師傅團隊 ({stats.mCount}/{Object.keys(settings?.colorMap || {}).length})</div>
+                                        <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase tracking-widest font-black shadow-sm">師傅團隊 ({stats.mCount}/{Object.keys(settings?.colorMap || {}).filter(id => !hiddenList.includes(id)).length})</div>
                                         <div className="grid grid-cols-8 border-t border-slate-800 shadow-inner">
-                                            {Object.keys(settings?.colorMap || {}).sort((a,b)=>parseInt(a)-parseInt(b)).map(id => (
+                                            {/* V18 Modification: 訪談清單中僅顯示本月「未隱藏」的師傅 ID */}
+                                            {Object.keys(settings?.colorMap || {}).filter(id => !hiddenList.includes(id)).sort((a,b)=>parseInt(a)-parseInt(b)).map(id => (
                                                 <div key={id} onClick={()=>{ if(isLocked) return; const next={...(interview || {})}; if(next[id]===brush) delete next[id]; else next[id]=brush; pushInterviewData(next); }} className="interview-box p-1 flex flex-col items-center border-r border-b h-12 justify-center group hover:bg-white transition-colors" style={{ backgroundColor: interview[id]?`${interview[id]}11`:'' }}>
                                                     <span className="font-mono text-xs font-black" style={{ color: settings.colorMap[id] }}>{id}</span>
                                                     <div className="w-2.5 h-2.5 rounded-full border bg-white mt-1 shadow-inner" style={{ backgroundColor: interview[id] || 'white' }}></div>
