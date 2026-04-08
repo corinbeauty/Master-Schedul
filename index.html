@@ -61,6 +61,22 @@
         
         /* 師傅時段專用樣式 */
         .hourly-grid { display: grid; grid-template-columns: 80px repeat(10, 1fr) 60px; }
+
+        /* 通訊錄專用樣式 */
+        .directory-input { background: transparent; border: none; outline: none; width: 100%; text-align: center; font-weight: bold; }
+        .directory-input:focus { background: white; box-shadow: 0 0 0 1px #6366f1; border-radius: 2px; }
+        
+        .grid-directory {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1px;
+            background-color: #000;
+            border: 2px solid #000;
+        }
+        .grid-directory > div {
+            background-color: #fff;
+            padding: 8px;
+        }
     </style>
 </head>
 <body>
@@ -95,30 +111,28 @@
             ALL: { label: "大全", color: "#3B82F6" }
         };
 
-        // 主管顏色配置
         const DEFAULT_SUPERVISORS = [
-            { id: 's1', label: '主管1', color: '#4f46e5' }, // Indigo
-            { id: 's2', label: '主管2', color: '#10b981' }, // Emerald
-            { id: 's3', label: '主管3', color: '#f43f5e' }, // Rose
-            { id: 's4', label: '主管4', color: '#f59e0b' }, // Amber
-            { id: 's5', label: '主管5', color: '#06b6d4' }, // Cyan
-            { id: 's6', label: '主管6', color: '#d946ef' }, // Fuchsia
-            { id: 's7', label: '主管7', color: '#f97316' }, // Orange
-            { id: 's8', label: '主管8', color: '#334155' }  // Slate
+            { id: 's1', label: '主管1', color: '#4f46e5' },
+            { id: 's2', label: '主管2', color: '#10b981' },
+            { id: 's3', label: '主管3', color: '#f43f5e' },
+            { id: 's4', label: '主管4', color: '#f59e0b' },
+            { id: 's5', label: '主管5', color: '#06b6d4' },
+            { id: 's6', label: '主管6', color: '#d946ef' },
+            { id: 's7', label: '主管7', color: '#f97316' },
+            { id: 's8', label: '主管8', color: '#334155' }
         ];
 
-        // V18 Modification: hiddenMasters 初始化為物件，存儲各月份隱藏清單
         const INITIAL_STATE = { holidays: [], colorMap: {}, hiddenMasters: {}, counterStaff: [], supervisorList: DEFAULT_SUPERVISORS, locks: {} };
+
+        // --- 通訊錄初始模板 (改為空，由資料庫讀取) ---
+        const DIRECTORY_INITIAL = [];
 
         // --- UI 組件: 彈出視窗 ---
         const CustomModal = ({ title, message, onConfirm, onCancel, showInput, inputValue, setInputValue, confirmText = "確認", cancelText = "取消" }) => {
-            
-            // V18 Modification: 新增鍵盤監聽 (Enter/ESC)
             const handleKeyDown = (e) => {
                 if (e.key === 'Enter') onConfirm();
                 if (e.key === 'Escape' && onCancel) onCancel();
             };
-
             return (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border">
@@ -162,26 +176,29 @@
             const [hourlyData, setHourlyData] = useState({});
             const [maintenanceRecords, setMaintenanceRecords] = useState([]);
 
+            // 通訊錄專用狀態
+            const [contacts, setContacts] = useState([]);
+            const [contactSearch, setContactSearch] = useState("");
+            const [contactMonth, setContactMonth] = useState("ALL");
+            const [newContact, setNewContact] = useState({ id: "", name: "", birthday: "", phone: "", workTime: "", role: "MASTER" });
+
             const [newMasterId, setNewMasterId] = useState("");
             const [newMasterType, setNewMasterType] = useState("MALE");
             const [modalConfig, setModalConfig] = useState(null); 
             const [passInput, setPassInput] = useState("");
 
             // 維修紀錄表單 State
-            const [newMaint, setNewMaint] = useState({ date: new Date().toISOString().split('T')[0], time: "", item: "", cost: "", person: "", recorder: "" });
+            const [newMaint, setNewMaint] = useState({ date: new Date().toISOString().split('T')[0], time: "", item: "", cost: "", person: "", recorder: "", notes: "" });
 
             const isLegacyDate = (y, m) => (y < 2026 || (y === 2026 && m < 3));
             const currentKey = isLegacyDate(year, month) ? `${year}-${month}` : `${year}-${String(month).padStart(2, '0')}`;
 
-            // V18 Modification: 取得當前月份隱藏清單的共用邏輯
             const hiddenList = useMemo(() => {
                 const hm = settings.hiddenMasters || {};
-                // 相容舊版陣列格式
                 if (Array.isArray(hm)) return hm;
                 return hm[currentKey] || [];
             }, [settings.hiddenMasters, currentKey]);
 
-            // 計算上個月的 Key (用於資料繼承)
             const getPrevMonthKey = (y, m) => {
                 let py = y, pm = m - 1;
                 if (pm === 0) { py = y - 1; pm = 12; }
@@ -212,8 +229,6 @@
                 return settingsRef.onSnapshot((snap) => {
                     if (snap.exists) {
                         const data = snap.data();
-                        
-                        // 自動補齊或修正主管名單，包含顏色更新邏輯
                         let loadedList = data.supervisorList || [];
                         if (loadedList.length < 8) {
                             const needed = 8 - loadedList.length;
@@ -222,11 +237,10 @@
                                 loadedList.push(DEFAULT_SUPERVISORS[startIndex + i]);
                             }
                         }
-
                         setSettings({
                             holidays: data.holidays || [],
                             colorMap: data.colorMap || {},
-                            hiddenMasters: data.hiddenMasters || {}, // 確保為物件
+                            hiddenMasters: data.hiddenMasters || {},
                             counterStaff: data.counterStaff || [],
                             supervisorList: loadedList,
                             locks: data.locks || {}
@@ -239,7 +253,7 @@
             useEffect(() => {
                 if (!user) return;
                 setIsSyncing(true);
-                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {}, unsubMaint = () => {};
+                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {}, unsubMaint = () => {}, unsubDirectory = () => {};
 
                 if (isLegacyDate(year, month)) {
                     unsubLegacy = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(currentKey)
@@ -289,7 +303,18 @@
                         setMaintenanceRecords(list.sort((a,b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time)));
                     });
 
-                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); unsubMaint(); };
+                // 獨立通訊錄資料讀取
+                unsubDirectory = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('directory').doc('main')
+                    .onSnapshot((snap) => {
+                        if (snap.exists) {
+                            const list = snap.data().list || [];
+                            setContacts(list);
+                        } else {
+                            setContacts([]);
+                        }
+                    });
+
+                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); unsubMaint(); unsubDirectory(); };
             }, [user, currentKey]);
 
             const pushS = (val) => { if (!user) return; db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set(val); };
@@ -323,13 +348,71 @@
                     ...newMaint,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                setNewMaint({ date: new Date().toISOString().split('T')[0], time: "", item: "", cost: "", person: "", recorder: "" });
+                setNewMaint({ date: new Date().toISOString().split('T')[0], time: "", item: "", cost: "", person: "", recorder: "", notes: "" });
+            };
+
+            const updateMaintenanceRecord = (id, field, value) => {
+                if (!user || isLocked) return;
+                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('maintenanceRecords').doc(id).update({
+                    [field]: value,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
             };
 
             const deleteMaintenanceRecord = (id) => {
                 if (!user || isLocked) return;
                 db.collection('artifacts').doc(appId).collection('public').doc('data').collection('maintenanceRecords').doc(id).delete();
             };
+
+            // --- 通訊錄強化邏輯 (Tab G) ---
+            const saveContacts = (newList) => { if (!user || isLocked) return; db.collection('artifacts').doc(appId).collection('public').doc('data').collection('directory').doc('main').set({ list: newList }); };
+            const updateContactField = (id, field, value) => {
+                const next = contacts.map(c => c.id === id ? { ...c, [field]: value } : c);
+                setContacts(next);
+                saveContacts(next);
+            };
+            const toggleContactArchive = (id) => {
+                const next = contacts.map(c => c.id === id ? { ...c, isArchived: !c.isArchived } : c);
+                setContacts(next);
+                saveContacts(next);
+            };
+            const deleteContactPermanent = (id) => {
+                if (window.confirm(`確定要永久刪除編號 ${id} 的通訊資料嗎？此操作無法還原。`)) {
+                    const next = contacts.filter(c => c.id !== id);
+                    setContacts(next);
+                    saveContacts(next);
+                }
+            };
+            const addNewContact = () => {
+                if (!newContact.id || !newContact.name) {
+                    setModalConfig({ title: "提示", message: "請填寫編號與姓名", onConfirm: () => setModalConfig(null) });
+                    return;
+                }
+                const exists = contacts.find(c => c.id === newContact.id);
+                if (exists) {
+                    setModalConfig({ title: "提示", message: "編號重複，請確認", onConfirm: () => setModalConfig(null) });
+                    return;
+                }
+                const next = [...contacts, { ...newContact, isArchived: false }];
+                setContacts(next);
+                saveContacts(next);
+                setNewContact({ id: "", name: "", birthday: "", phone: "", workTime: "", role: "MASTER" });
+            };
+
+            const filteredContacts = useMemo(() => {
+                return contacts.filter(c => {
+                    const matchMonth = contactMonth === "ALL" || (c.birthday && c.birthday.startsWith(contactMonth.padStart(2, '0')));
+                    const matchSearch = !contactSearch || c.name.includes(contactSearch) || c.id.includes(contactSearch) || (c.phone && c.phone.includes(contactSearch));
+                    return matchMonth && matchSearch;
+                }).sort((a,b) => {
+                    if (a.isArchived !== b.isArchived) return a.isArchived ? 1 : -1;
+                    if (a.role !== b.role) return a.role === 'COUNTER' ? -1 : 1;
+                    const idA = a.id.startsWith('ST') ? parseInt(a.id.slice(2)) : parseInt(a.id);
+                    const idB = b.id.startsWith('ST') ? parseInt(b.id.slice(2)) : parseInt(b.id);
+                    if (isNaN(idA)) return 1; if (isNaN(idB)) return -1;
+                    return idA - idB;
+                });
+            }, [contacts, contactMonth, contactSearch]);
 
             const handleToggleLock = () => {
                 if (isLocked) {
@@ -349,7 +432,6 @@
             const masterCategoryStats = useMemo(() => {
                 const counts = { MALE: 0, FEMALE: 0, ALL: 0 };
                 Object.entries(settings?.colorMap || {}).forEach(([id, color]) => {
-                    // V18 Modification: 統計排除當前月份隱藏的人員
                     if (hiddenList.includes(id)) return;
                     if (color === COLOR_TYPES.MALE.color) counts.MALE++;
                     else if (color === COLOR_TYPES.FEMALE.color) counts.FEMALE++;
@@ -358,22 +440,14 @@
                 return counts;
             }, [settings?.colorMap, hiddenList]);
 
-            // V18 Modification: 修正人數統計邏輯，自動排除隱藏人員
             const stats = useMemo(() => {
                 const scheduleIds = Object.values(schedule || {}).flat().map(v => v ? v.trim() : "").filter(Boolean);
-                // 僅計算當月可見的師傅
                 const visibleMasters = Object.keys(settings?.colorMap || {}).filter(id => !hiddenList.includes(id));
                 const counterStaff = settings?.counterStaff || [];
-                
-                // 計算未排班清單 (僅針對可見師傅)
                 const missing = visibleMasters.filter(id => !new Set(scheduleIds).has(id)).sort((a,b)=>parseInt(a)-parseInt(b));
-                
                 const sCount = {}; 
                 (settings?.supervisorList || []).forEach(s => sCount[s.color] = 0);
-                
                 let mCount = 0, cCount = 0;
-                
-                // 統計訪談數據 (僅針對可見師傅與現有櫃台人員)
                 Object.keys(interview || {}).forEach(staffId => {
                     const supervisorColor = interview[staffId];
                     if (visibleMasters.includes(staffId)) {
@@ -384,8 +458,6 @@
                         if (sCount.hasOwnProperty(supervisorColor)) sCount[supervisorColor]++;
                     }
                 });
-
-                // 總訪談人數應為可見師傅已訪量 + 櫃台已訪量
                 return { missing, total: mCount + cCount, mCount, cCount, sCount };
             }, [schedule, settings, interview, hiddenList]);
 
@@ -396,17 +468,13 @@
                 if (!newMasterId.trim()) return;
                 const id = newMasterId.trim();
                 const nextMap = { ...(settings?.colorMap || {}), [id]: COLOR_TYPES[newMasterType].color };
-                
-                // V18 Modification: 重啟師傅時，從當月隱藏清單移除
                 const currentMonthHidden = hiddenList.filter(x => x !== id);
-                const nextHidden = { ...(settings.hiddenMasters || {}), [currentKey]: currentMonthMonthHidden };
-                
+                const nextHidden = { ...(settings.hiddenMasters || {}), [currentKey]: currentMonthHidden };
                 pushS({ ...settings, colorMap: nextMap, hiddenMasters: nextHidden });
                 setNewMasterId("");
             };
 
             const handleHideMaster = (id) => {
-                // V18 Modification: 將隱藏邏輯限制在當前月份
                 const nextHiddenList = Array.from(new Set([...hiddenList, id]));
                 const nextHiddenMap = { ...(settings.hiddenMasters || {}), [currentKey]: nextHiddenList };
                 pushS({ ...settings, hiddenMasters: nextHiddenMap });
@@ -416,16 +484,16 @@
 
             return (
                 <div className="min-h-screen flex flex-col">
-                    {modalConfig && <CustomModal title={modalConfig.title} message={modalConfig.message} showInput={modalConfig.showInput} inputValue={passInput} setInputValue={setPassInput} onConfirm={confirmUnlock} 
+                    {modalConfig && <CustomModal title={modalConfig.title} message={modalConfig.message} showInput={modalConfig.showInput} inputValue={passInput} setInputValue={setPassInput} onConfirm={modalConfig.onConfirm || confirmUnlock} 
                         onCancel={modalConfig.type === 'unlock' ? null : () => setModalConfig(null)} />}
 
                     <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b">
                         <div className="flex items-center gap-4">
                             <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase italic">不老松中清店</h1>
                             <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
-                                {['A', 'B', 'E', 'C', 'D', 'F'].map(tab => (
+                                {['A', 'B', 'E', 'G', 'C', 'D', 'F'].map(tab => (
                                     <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
-                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='C'?'師傅顏色':tab==='D'?'訪談標記':'維修紀錄'}
+                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='G'?'人員通訊':tab==='C'?'師傅顏色':tab==='D'?'訪談標記':'維修紀錄'}
                                     </button>
                                 ))}
                             </div>
@@ -476,7 +544,7 @@
                                 </div>
                             </div>
                         )}
-
+                        
                         {activeTab === 'B' && (
                             <div className="animate-fadeIn">
                                 <div className="flex justify-between items-end mb-4 print-hidden">
@@ -571,6 +639,108 @@
                             </div>
                         )}
 
+                        {activeTab === 'G' && (
+                            <div className="animate-fadeIn h-full flex flex-col gap-4">
+                                {/* 新增人員功能區 */}
+                                <div className={`bg-white p-4 rounded-xl border shadow-sm flex flex-wrap items-end gap-3 ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                    <div className="flex-[0.5] min-w-[80px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">編號</label>
+                                        <input value={newContact.id} onChange={e=>setNewContact({...newContact, id: e.target.value})} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-bold border-2 border-transparent focus:border-indigo-500 outline-none" placeholder="編號" />
+                                    </div>
+                                    <div className="flex-1 min-w-[120px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">姓名</label>
+                                        <input value={newContact.name} onChange={e=>setNewContact({...newContact, name: e.target.value})} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-bold border-2 border-transparent focus:border-indigo-500 outline-none" placeholder="姓名" />
+                                    </div>
+                                    <div className="flex-1 min-w-[100px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">生日</label>
+                                        <input value={newContact.birthday} onChange={e=>setNewContact({...newContact, birthday: e.target.value})} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-bold border-2 border-transparent focus:border-indigo-500 outline-none" placeholder="MM.DD" />
+                                    </div>
+                                    <div className="flex-[1.5] min-w-[150px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">電話</label>
+                                        <input value={newContact.phone} onChange={e=>setNewContact({...newContact, phone: e.target.value})} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-bold border-2 border-transparent focus:border-indigo-500 outline-none" placeholder="電話號碼" />
+                                    </div>
+                                    <div className="flex-1 min-w-[100px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">時段</label>
+                                        <input value={newContact.workTime} onChange={e=>setNewContact({...newContact, workTime: e.target.value})} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-bold border-2 border-transparent focus:border-indigo-500 outline-none" placeholder="上班時間" />
+                                    </div>
+                                    <div className="min-w-[100px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">類別</label>
+                                        <select value={newContact.role} onChange={e=>setNewContact({...newContact, role: e.target.value})} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-black border-2 border-transparent focus:border-indigo-500 outline-none">
+                                            <option value="MASTER">師傅</option>
+                                            <option value="COUNTER">櫃台</option>
+                                        </select>
+                                    </div>
+                                    <button onClick={addNewContact} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-black text-sm shadow hover:bg-indigo-700 active:scale-95 transition-all">新增存檔</button>
+                                </div>
+
+                                <div className={`bg-white p-4 rounded-xl border shadow-sm flex flex-wrap items-end gap-3 ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                                    <div className="flex-1 min-w-[150px]">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">快速搜尋名單</label>
+                                        <input value={contactSearch} onChange={e=>setContactSearch(e.target.value)} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-bold border-2 border-transparent focus:border-indigo-500 outline-none" placeholder="搜尋 編號 / 姓名 / 電話" />
+                                    </div>
+                                    <div className="w-24">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">月份篩選</label>
+                                        <select value={contactMonth} onChange={e=>setContactMonth(e.target.value)} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-black outline-none border-2 border-transparent focus:border-indigo-500">
+                                            <option value="ALL">全部</option>
+                                            {[...Array(12)].map((_,i)=><option key={i+1} value={String(i+1).padStart(2, '0')}>{i+1}月壽星</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex-1 bg-white border-2 border-slate-900 shadow-2xl overflow-hidden flex flex-col min-h-[500px]">
+                                    <div className="bg-slate-900 text-white p-2 flex text-center font-black uppercase text-xs border-b border-slate-900 tracking-[0.2em]">
+                                        <div className="flex-1 border-r border-slate-700">正式通訊名單</div>
+                                        <div className="flex-1">正式通訊名單</div>
+                                    </div>
+                                    <div className="overflow-y-auto flex-1 custom-scrollbar bg-slate-200">
+                                        {/* 標頭區 */}
+                                        <div className="grid grid-cols-2 gap-px border-b border-slate-900 sticky top-0 z-20">
+                                            {[0, 1].map(i => (
+                                                <div key={i} className="grid grid-cols-12 bg-slate-100 font-black text-[10px] text-slate-500 py-1 uppercase border-r border-slate-300 last:border-r-0">
+                                                    <div className="col-span-1 text-center">ID</div><div className="col-span-2 text-center">姓名</div><div className="col-span-2 text-center">生日</div><div className="col-span-4 text-center">電話</div><div className="col-span-2 text-center">時段</div><div className="col-span-1 text-center"></div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* 通訊錄名單內容：由左至右填充 */}
+                                        <div className="grid grid-cols-2 gap-px">
+                                            {filteredContacts.map((c, idx) => (
+                                                <div key={c.id} className={`grid grid-cols-12 items-center bg-white hover:bg-indigo-50 transition-colors py-1.5 px-1 border-b border-slate-100 ${c.isArchived ? 'opacity-40 grayscale bg-slate-50' : ''}`}>
+                                                    <div className={`col-span-1 text-center font-mono font-black text-[11px] ${c.role === 'COUNTER' ? 'text-blue-600' : 'text-slate-800'}`}>{c.id}</div>
+                                                    <div className="col-span-2 font-bold px-1"><input className="directory-input text-[11px]" value={c.name} disabled={isLocked} onChange={e=>updateContactField(c.id, 'name', e.target.value)} /></div>
+                                                    <div className="col-span-2 text-center"><input className="directory-input text-indigo-600 text-[10px]" value={c.birthday} disabled={isLocked} onChange={e=>updateContactField(c.id, 'birthday', e.target.value)} /></div>
+                                                    <div className="col-span-4 px-1"><input className="directory-input text-slate-600 font-mono text-[10px]" value={c.phone} disabled={isLocked} onChange={e=>updateContactField(c.id, 'phone', e.target.value)} /></div>
+                                                    <div className="col-span-2 text-center"><input className="directory-input text-[10px]" value={c.workTime} disabled={isLocked} onChange={e=>updateContactField(c.id, 'workTime', e.target.value)} /></div>
+                                                    <div className="col-span-1 text-center flex items-center justify-center gap-1">
+                                                        {!isLocked && (
+                                                            c.isArchived ? (
+                                                                <>
+                                                                    <button onClick={()=>toggleContactArchive(c.id)} className="text-green-500 hover:text-green-700 text-[10px] font-black" title="復原">回</button>
+                                                                    <button onClick={()=>deleteContactPermanent(c.id)} className="text-red-600 hover:text-red-800 text-[10px] font-black ml-1" title="永久刪除">刪</button>
+                                                                </>
+                                                            ) : (
+                                                                <button onClick={()=>toggleContactArchive(c.id)} className="text-slate-300 hover:text-red-500 text-[12px] font-black" title="隱藏至下方封存區">✕</button>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {/* 如果是奇數筆，補一個空白格子維持對齊 */}
+                                            {filteredContacts.length % 2 !== 0 && <div className="bg-white"></div>}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-slate-800 text-white p-3 rounded-xl flex justify-between px-6 text-[10px] font-black uppercase tracking-widest shadow-lg mt-4 items-center">
+                                    <div className="flex gap-4">
+                                        <span>總聯繫人數: {contacts.length} 位</span>
+                                        <span className="text-indigo-300 border-l border-slate-600 pl-4">提示：隱藏的人員會移動到名單最下方，並可執行復原或永久刪除。</span>
+                                    </div>
+                                    <div className="text-slate-400 italic">資料依編號排序・橫向平衡佈局</div>
+                                </div>
+                            </div>
+                        )}
+
                         {activeTab === 'C' && (
                             <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn h-full overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-center mb-6 border-b pb-4">
@@ -609,23 +779,6 @@
                                         </div>
                                     ))}
                                 </div>
-                                {/* V18 Modification: 顯示已隱藏清單，方便取消隱藏 */}
-                                {hiddenList.length > 0 && (
-                                    <div className="mt-10 pt-6 border-t">
-                                        <h3 className="text-xs font-black text-slate-400 mb-4 uppercase tracking-widest font-black">本月已隱藏人員 (點擊恢復)</h3>
-                                        <div className="flex flex-wrap gap-2">
-                                            {hiddenList.map(id => (
-                                                <button key={id} onClick={() => {
-                                                    const nextList = hiddenList.filter(x => x !== id);
-                                                    const nextMap = { ...(settings.hiddenMasters || {}), [currentKey]: nextList };
-                                                    pushS({ ...settings, hiddenMasters: nextMap });
-                                                }} className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full text-xs font-black hover:bg-indigo-50 hover:text-indigo-600 transition-colors border border-dashed border-slate-300">
-                                                    {id} +
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         )}
 
@@ -679,7 +832,6 @@
                                         </div>
                                         <div className="bg-slate-800 text-white text-[10px] font-black px-2 py-0.5 rounded-t inline-block uppercase tracking-widest font-black shadow-sm">師傅團隊 ({stats.mCount}/{Object.keys(settings?.colorMap || {}).filter(id => !hiddenList.includes(id)).length})</div>
                                         <div className="grid grid-cols-8 border-t border-slate-800 shadow-inner">
-                                            {/* V18 Modification: 訪談清單中僅顯示本月「未隱藏」的師傅 ID */}
                                             {Object.keys(settings?.colorMap || {}).filter(id => !hiddenList.includes(id)).sort((a,b)=>parseInt(a)-parseInt(b)).map(id => (
                                                 <div key={id} onClick={()=>{ if(isLocked) return; const next={...(interview || {})}; if(next[id]===brush) delete next[id]; else next[id]=brush; pushInterviewData(next); }} className="interview-box p-1 flex flex-col items-center border-r border-b h-12 justify-center group hover:bg-white transition-colors" style={{ backgroundColor: interview[id]?`${interview[id]}11`:'' }}>
                                                     <span className="font-mono text-xs font-black" style={{ color: settings.colorMap[id] }}>{id}</span>
@@ -701,7 +853,7 @@
                             <div className="animate-fadeIn h-full flex flex-col gap-4">
                                 <div className={`bg-white p-4 rounded-xl border shadow-sm ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
                                     <h2 className="text-lg font-black text-slate-800 mb-3 tracking-widest uppercase">新增維修紀錄</h2>
-                                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                                    <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                                         <div className="flex flex-col gap-1">
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">日期</label>
                                             <input type="date" value={newMaint.date} onChange={e=>setNewMaint({...newMaint, date: e.target.value})} className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
@@ -726,6 +878,10 @@
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">填寫人員</label>
                                             <input value={newMaint.recorder} onChange={e=>setNewMaint({...newMaint, recorder: e.target.value})} placeholder="您的姓名" className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
                                         </div>
+                                        <div className="flex flex-col gap-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">備註</label>
+                                            <input value={newMaint.notes} onChange={e=>setNewMaint({...newMaint, notes: e.target.value})} placeholder="補充說明..." className="border p-2 rounded text-xs font-black outline-none focus:border-indigo-500" />
+                                        </div>
                                     </div>
                                     <button onClick={addMaintenanceRecord} className="mt-4 w-full bg-slate-800 text-white py-2 rounded-lg font-black text-sm shadow hover:bg-black active:scale-95 transition-all uppercase tracking-widest">新增至維修清單</button>
                                 </div>
@@ -736,18 +892,19 @@
                                         <table className="w-full text-xs text-center border-collapse">
                                             <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-300">
                                                 <tr className="font-black text-slate-500 uppercase tracking-tighter">
-                                                    <th className="py-2 px-2 border-r">日期</th>
-                                                    <th className="py-2 px-2 border-r">時間</th>
-                                                    <th className="py-2 px-2 border-r text-left">維修項目</th>
-                                                    <th className="py-2 px-2 border-r">費用</th>
-                                                    <th className="py-2 px-2 border-r">處理人</th>
-                                                    <th className="py-2 px-2 border-r">紀錄人</th>
-                                                    {!isLocked && <th className="py-2 px-2">操作</th>}
+                                                    <th className="py-2 px-2 border-r w-24">日期</th>
+                                                    <th className="py-2 px-2 border-r w-16">時間</th>
+                                                    <th className="py-2 px-2 border-r text-left w-32">維修項目</th>
+                                                    <th className="py-2 px-2 border-r w-20">費用</th>
+                                                    <th className="py-2 px-2 border-r w-24">處理人</th>
+                                                    <th className="py-2 px-2 border-r w-24 text-left">備註 (點擊編輯)</th>
+                                                    <th className="py-2 px-2 border-r w-16">紀錄人</th>
+                                                    {!isLocked && <th className="py-2 px-2 w-10">✕</th>}
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {maintenanceRecords.length === 0 ? (
-                                                    <tr><td colSpan="7" className="py-10 text-slate-300 font-bold italic">目前尚無維修紀錄</td></tr>
+                                                    <tr><td colSpan="8" className="py-10 text-slate-300 font-bold italic">目前尚無維修紀錄</td></tr>
                                                 ) : (
                                                     maintenanceRecords.map(m => (
                                                         <tr key={m.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
@@ -756,6 +913,16 @@
                                                             <td className="py-2 text-left font-black text-slate-700 px-2">{m.item}</td>
                                                             <td className="py-2 font-black text-orange-600">NT$ {m.cost}</td>
                                                             <td className="py-2 font-bold">{m.person}</td>
+                                                            <td className="py-1 px-1 border-r text-left">
+                                                                <input 
+                                                                    defaultValue={m.notes || ""} 
+                                                                    disabled={isLocked}
+                                                                    placeholder="點此編輯備註..."
+                                                                    onBlur={(e) => updateMaintenanceRecord(m.id, 'notes', e.target.value)}
+                                                                    onKeyDown={(e) => { if(e.key === 'Enter') { updateMaintenanceRecord(m.id, 'notes', e.target.value); e.target.blur(); } }}
+                                                                    className="w-full bg-transparent border-none outline-none focus:bg-white focus:ring-1 focus:ring-indigo-300 rounded px-1 py-1 text-[11px] font-bold text-slate-600 placeholder-slate-200"
+                                                                />
+                                                            </td>
                                                             <td className="py-2 font-bold text-slate-400">{m.recorder}</td>
                                                             {!isLocked && (
                                                                 <td className="py-2">
