@@ -9,8 +9,8 @@
     <!-- 載入 React 核心 (UMD 版本) -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- 載入 Babel 實時轉譯器 -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- 載入 Babel 實時轉譯器 (鎖定穩定版 7.23.2 修復網頁空白問題) -->
+    <script src="https://unpkg.com/@babel/standalone@7.23.2/babel.min.js"></script>
     
     <!-- 載入 Firebase 相容性 SDK (UMD 版本) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -641,9 +641,9 @@
                                                         <input key={i} className="w-full h-full text-center font-black text-xs outline-none border-r border-slate-100 last:border-r-0"
                                                                style={{ color: (settings?.colorMap || {})[v.trim()] || '#000' }} value={v} disabled={isLocked}
                                                                onChange={e => {
-                                                                    const nextSlots = [...slots]; nextSlots[i] = e.target.value;
-                                                                    const nextHourlyData = { ...hourlyData, [time]: nextSlots };
-                                                                    setHourlyData(nextHourlyData); pushHourlyData(nextHourlyData);
+                                                                   const nextSlots = [...slots]; nextSlots[i] = e.target.value;
+                                                                   const nextHourlyData = { ...hourlyData, [time]: nextSlots };
+                                                                   setHourlyData(nextHourlyData); pushHourlyData(nextHourlyData);
                                                                }} />
                                                     ))}
                                                     <div className="bg-indigo-50 h-full flex items-center justify-center font-black text-xs text-indigo-700 border-l border-indigo-200">{activeCount}</div>
