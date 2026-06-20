@@ -509,7 +509,7 @@
                             <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
                                 {['A', 'B', 'E', 'G', 'C', 'D', 'F', 'H'].map(tab => (
                                     <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
-                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='G'?'人員通訊':tab==='C'?'師傅顏色':tab==='D'?'訪談標記':tab==='F'?'維修紀錄':'歸苓膏'}
+                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='G'?'人員通訊':tab==='C'?'師傅顏色':tab==='D'?'訪談標記(停止使用)':tab==='F'?'維修紀錄':'歸苓膏'}
                                     </button>
                                 ))}
                             </div>
