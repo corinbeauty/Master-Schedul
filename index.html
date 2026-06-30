@@ -515,6 +515,12 @@
                 return counts;
             }, [tastingData]);
 
+            // 歸苓膏依月份篩選
+            const filteredProdRecords = useMemo(() => {
+                const prefix = `${year}-${String(month).padStart(2, '0')}`;
+                return prodRecords.filter(r => r.date && r.date.startsWith(prefix));
+            }, [prodRecords, year, month]);
+
             const toggleTasting = (day, shift) => {
                 if (isLocked) return;
                 const key = `${day}-${shift}`;
@@ -1069,7 +1075,7 @@
                                 </div>
 
                                 <div className="bg-white border-2 border-slate-900 shadow-xl flex-1 overflow-hidden flex flex-col min-h-[400px]">
-                                    <div className="bg-slate-900 p-2 text-center font-black text-white text-xs tracking-[0.2em] uppercase">歷史生產清單 (可直接修改資料)</div>
+                                    <div className="bg-slate-900 p-2 text-center font-black text-white text-xs tracking-[0.2em] uppercase">[{year}年{month}月] 生產清單 (可直接修改資料)</div>
                                     <div className="overflow-y-auto flex-1 custom-scrollbar">
                                         <table className="w-full text-xs text-center border-collapse">
                                             <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-900">
@@ -1084,10 +1090,10 @@
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {prodRecords.length === 0 ? (
-                                                    <tr><td colSpan="7" className="py-10 text-slate-300 font-bold italic">尚無生產記錄</td></tr>
+                                                {filteredProdRecords.length === 0 ? (
+                                                    <tr><td colSpan="7" className="py-10 text-slate-300 font-bold italic">本月尚無生產記錄</td></tr>
                                                 ) : (
-                                                    prodRecords.map(r => (
+                                                    filteredProdRecords.map(r => (
                                                         <tr key={r.id} className="hover:bg-orange-50 transition-colors">
                                                             <td className="py-2 font-mono font-black border-r border-slate-50">{r.date}</td>
                                                             <td className="border-r border-slate-50"><input className="directory-input" value={r.pack} onChange={e=>updateProdField(r.id, 'pack', e.target.value)} disabled={isLocked} /></td>
@@ -1106,10 +1112,10 @@
                                     </div>
                                     <div className="bg-slate-100 p-2 border-t-2 border-slate-900 flex justify-between px-6 text-[10px] font-black uppercase tracking-widest">
                                         <div className="flex gap-6">
-                                            <span>記錄筆數: {prodRecords.length} 筆</span>
-                                            <span className="border-l border-slate-300 pl-6">累計原液: {prodRecords.reduce((a,c)=>a+(Number(c.pack)||0), 0)} 包</span>
+                                            <span>本月記錄: {filteredProdRecords.length} 筆</span>
+                                            <span className="border-l border-slate-300 pl-6">本月累計原液: {filteredProdRecords.reduce((a,c)=>a+(Number(c.pack)||0), 0)} 包</span>
                                         </div>
-                                        <div className="text-orange-600">成品總累計: {prodRecords.reduce((a,c)=>a+(Number(c.bowls)||0), 0)} 碗</div>
+                                        <div className="text-orange-600">本月成品總累計: {filteredProdRecords.reduce((a,c)=>a+(Number(c.bowls)||0), 0)} 碗</div>
                                     </div>
                                 </div>
                             </div>
