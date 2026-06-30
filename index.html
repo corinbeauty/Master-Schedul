@@ -76,6 +76,14 @@
             background-color: #fff;
             padding: 8px;
         }
+        
+        /* 自訂核取方塊放大與顏色 */
+        .tasting-checkbox {
+            width: 1.5rem;
+            height: 1.5rem;
+            cursor: pointer;
+            accent-color: #4f46e5;
+        }
     </style>
 </head>
 <body>
@@ -169,6 +177,7 @@
             const [hourlyData, setHourlyData] = useState({});
             const [maintenanceRecords, setMaintenanceRecords] = useState([]);
             const [prodRecords, setProdRecords] = useState([]);
+            const [tastingData, setTastingData] = useState({}); // 試吃試喝狀態
 
             // 通訊錄專用狀態
             const [contacts, setContacts] = useState([]);
@@ -248,7 +257,7 @@
             useEffect(() => {
                 if (!user) return;
                 setIsSyncing(true);
-                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {}, unsubMaint = () => {}, unsubDirectory = () => {}, unsubProd = () => {};
+                let unsubSch = () => {}, unsubInt = () => {}, unsubLegacy = () => {}, unsubHourly = () => {}, unsubMaint = () => {}, unsubDirectory = () => {}, unsubProd = () => {}, unsubTasting = () => {};
 
                 if (isLegacyDate(year, month)) {
                     unsubLegacy = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('monthlyData').doc(currentKey)
@@ -312,8 +321,18 @@
                             setContacts(list);
                         } else { setContacts([]); }
                     });
+                    
+                // 訂閱試吃試喝資料
+                unsubTasting = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('tastingData').doc(currentKey)
+                    .onSnapshot((snap) => {
+                        if (snap.exists) {
+                            setTastingData(snap.data().content || {});
+                        } else {
+                            setTastingData({});
+                        }
+                    });
 
-                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); unsubMaint(); unsubDirectory(); unsubProd(); };
+                return () => { unsubSch(); unsubInt(); unsubLegacy(); unsubHourly(); unsubMaint(); unsubDirectory(); unsubProd(); unsubTasting(); };
             }, [user, currentKey]);
 
             const pushS = (val) => { if (!user) return; db.collection('artifacts').doc(appId).collection('public').doc('data').collection('settings').doc('global').set(val); };
@@ -339,6 +358,14 @@
             const pushHourlyData = (h) => {
                 if (!user || isLocked) return;
                 db.collection('artifacts').doc(appId).collection('public').doc('data').collection('hourlyData').doc(currentKey).set({ content: h, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            };
+            
+            const pushTastingData = (data) => {
+                if (!user || isLocked) return;
+                db.collection('artifacts').doc(appId).collection('public').doc('data').collection('tastingData').doc(currentKey).set({
+                    content: data,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
             };
 
             const addMaintenanceRecord = () => {
@@ -380,7 +407,6 @@
                 });
             };
 
-            // --- 通訊錄強化邏輯 (Tab G) ---
             const saveContacts = (newList) => { if (!user || isLocked) return; db.collection('artifacts').doc(appId).collection('public').doc('data').collection('directory').doc('main').set({ list: newList }); };
             const updateContactField = (id, field, value) => {
                 const next = contacts.map(c => c.id === id ? { ...c, [field]: value } : c);
@@ -476,6 +502,26 @@
                 });
                 return { missing, total: mCount + cCount, mCount, cCount, sCount };
             }, [schedule, settings, interview, hiddenList]);
+            
+            // 計算試吃試喝統計數據
+            const tastingStats = useMemo(() => {
+                const counts = { early: 0, late: 0, night: 0 };
+                Object.entries(tastingData || {}).forEach(([key, val]) => {
+                    if (val) {
+                        const shift = key.split('-')[1];
+                        if (counts[shift] !== undefined) counts[shift]++;
+                    }
+                });
+                return counts;
+            }, [tastingData]);
+
+            const toggleTasting = (day, shift) => {
+                if (isLocked) return;
+                const key = `${day}-${shift}`;
+                const nextData = { ...tastingData, [key]: !tastingData[key] };
+                setTastingData(nextData);
+                pushTastingData(nextData);
+            };
 
             const [brush, setBrush] = useState("#000");
             useEffect(() => { if (settings?.supervisorList?.length > 0 && brush === "#000") setBrush(settings.supervisorList[0].color); }, [settings?.supervisorList]);
@@ -503,18 +549,31 @@
                     {modalConfig && <CustomModal title={modalConfig.title} message={modalConfig.message} showInput={modalConfig.showInput} inputValue={passInput} setInputValue={setPassInput} onConfirm={modalConfig.onConfirm || confirmUnlock} 
                         onCancel={modalConfig.type === 'unlock' ? null : () => setModalConfig(null)} />}
 
-                    <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b">
-                        <div className="flex items-center gap-4">
+                    <nav className="bg-white shadow px-6 py-2 flex items-center justify-between sticky top-0 z-50 print-hidden border-b overflow-x-auto">
+                        <div className="flex items-center gap-4 whitespace-nowrap min-w-max">
                             <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase italic">不老松中清店</h1>
-                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold">
-                                {['A', 'B', 'E', 'G', 'C', 'D', 'F', 'H'].map(tab => (
-                                    <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
-                                        {tab==='A'?'國定假日':tab==='B'?'排班主表':tab==='E'?'師傅時段':tab==='G'?'人員通訊':tab==='C'?'師傅顏色':tab==='D'?'訪談標記(停止使用)':tab==='F'?'維修紀錄':'歸苓膏'}
-                                    </button>
-                                ))}
+                            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-bold gap-1">
+                                {['A', 'B', 'E', 'G', 'C', 'D', 'F', 'H', 'I'].map(tab => {
+                                    let label = '';
+                                    if(tab==='A') label='國定假日';
+                                    else if(tab==='B') label='排班主表';
+                                    else if(tab==='E') label='師傅時段';
+                                    else if(tab==='G') label='人員通訊';
+                                    else if(tab==='C') label='師傅顏色';
+                                    else if(tab==='D') label='訪談標記(停止使用)';
+                                    else if(tab==='F') label='維修紀錄';
+                                    else if(tab==='H') label='歸苓膏';
+                                    else if(tab==='I') label='試吃試喝';
+                                    
+                                    return (
+                                        <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-1.5 rounded transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>
+                                            {label}
+                                        </button>
+                                    )
+                                })}
                             </div>
                         </div>
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4 pl-4 min-w-max">
                             {isLocked && <span className="locked-badge">{settings?.locks?.[currentKey] === undefined ? "自動鎖定" : "鎖定中"}</span>}
                             <div className="flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-full border">
                                 <button onClick={handleToggleLock} className={`p-1 rounded-full ${isLocked ? 'text-red-500 bg-red-50' : 'text-slate-400'}`}>
@@ -534,6 +593,7 @@
                     </nav>
 
                     <main className={`flex-1 max-w-7xl mx-auto w-full p-4 mb-10 overflow-hidden ${isSyncing ? 'is-loading-data' : ''}`}>
+                        {}
                         {activeTab === 'A' && (
                             <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn">
                                 <h2 className="text-xl font-bold mb-4 uppercase text-slate-800 tracking-widest font-black">國定假日管理</h2>
@@ -561,6 +621,7 @@
                             </div>
                         )}
                         
+                        {}
                         {activeTab === 'B' && (
                             <div className="animate-fadeIn">
                                 <div className="flex justify-between items-end mb-4 print-hidden">
@@ -615,6 +676,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'E' && (
                             <div className="animate-fadeIn">
                                 <div className="flex justify-between items-center mb-4 border-b pb-2">
@@ -655,6 +717,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'G' && (
                             <div className="animate-fadeIn h-full flex flex-col gap-4">
                                 <div className={`bg-white p-4 rounded-xl border shadow-sm flex flex-wrap items-end gap-3 ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -697,7 +760,18 @@
                                         <label className="text-[10px] font-black text-slate-400 uppercase mb-1 block tracking-widest">月份篩選</label>
                                         <select value={contactMonth} onChange={e=>setContactMonth(e.target.value)} className="w-full bg-slate-100 p-2 rounded-lg text-sm font-black outline-none border-2 border-transparent focus:border-indigo-500">
                                             <option value="ALL">全部</option>
-                                            {[...Array(12)].map((_,i)=><option key={i+1} value={String(i+1).padStart(2, '0')}>{i+1}月壽星</option>)}
+                                            <option value="01">1月壽星</option>
+                                            <option value="02">2月壽星</option>
+                                            <option value="03">3月壽星</option>
+                                            <option value="04">4月壽星</option>
+                                            <option value="05">5月壽星</option>
+                                            <option value="06">6月壽星</option>
+                                            <option value="07">7月壽星</option>
+                                            <option value="08">8月壽星</option>
+                                            <option value="09">9月壽星</option>
+                                            <option value="10">10月壽星</option>
+                                            <option value="11">11月壽星</option>
+                                            <option value="12">12月壽星</option>
                                         </select>
                                     </div>
                                 </div>
@@ -753,6 +827,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'C' && (
                             <div className="bg-white p-6 rounded-xl border shadow-sm animate-fadeIn h-full overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-center mb-6 border-b pb-4">
@@ -794,6 +869,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'D' && (
                             <div className="flex flex-col h-full animate-fadeIn gap-4">
                                 <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -861,6 +937,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'F' && (
                             <div className="animate-fadeIn h-full flex flex-col gap-4">
                                 <div className={`bg-white p-4 rounded-xl border shadow-sm ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1033,6 +1110,68 @@
                                             <span className="border-l border-slate-300 pl-6">累計原液: {prodRecords.reduce((a,c)=>a+(Number(c.pack)||0), 0)} 包</span>
                                         </div>
                                         <div className="text-orange-600">成品總累計: {prodRecords.reduce((a,c)=>a+(Number(c.bowls)||0), 0)} 碗</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {}
+                        {activeTab === 'I' && (
+                            <div className="animate-fadeIn h-full flex flex-col gap-4">
+                                <div className="flex justify-between items-center mb-2 border-b pb-2 print-hidden">
+                                    <h2 className="text-xl font-black text-slate-800 tracking-tighter uppercase font-black">試吃試喝紀錄 <span className="text-indigo-600">[{year}年{month}月]</span></h2>
+                                    <div className="flex gap-4 text-xs font-black bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100 shadow-sm">
+                                        <div className="text-slate-600">本月累計:</div>
+                                        <div className="text-blue-700">早: {tastingStats.early}</div>
+                                        <div className="text-red-700 border-l border-indigo-200 pl-4">晚: {tastingStats.late}</div>
+                                        <div className="text-green-700 border-l border-indigo-200 pl-4">夜: {tastingStats.night}</div>
+                                    </div>
+                                </div>
+                                
+                                <div className="bg-white border-2 border-slate-900 shadow-xl overflow-hidden relative flex-1 min-h-[500px] flex flex-col">
+                                    {isLocked && <div className="absolute inset-0 bg-slate-500/5 z-10 pointer-events-none"></div>}
+                                    
+                                    <div className="overflow-y-auto flex-1 custom-scrollbar">
+                                        <table className="w-full border-collapse text-sm table-fixed">
+                                            <thead className="sticky top-0 z-10 bg-slate-800 text-white shadow-md">
+                                                <tr className="font-black uppercase tracking-widest">
+                                                    <th className="border-r border-slate-700 py-3 w-1/4">每日 (日期)</th>
+                                                    <th className="border-r border-slate-700 py-3 w-1/4 text-blue-300">早班</th>
+                                                    <th className="border-r border-slate-700 py-3 w-1/4 text-red-300">晚班</th>
+                                                    <th className="py-3 w-1/4 text-green-300">夜班</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-200">
+                                                {Array.from({length: new Date(year, month, 0).getDate()}, (_,i)=>i+1).map(day => {
+                                                    const dObj = new Date(year, month-1, day);
+                                                    const isH = dObj.getDay()===0 || dObj.getDay()===6;
+                                                    const clr = isH ? 'text-red-600' : 'text-slate-800';
+                                                    return (
+                                                        <tr key={day} className="hover:bg-slate-50 transition-colors h-12">
+                                                            <td className={`border-r border-slate-200 text-center font-black ${clr} bg-slate-50/50`}>
+                                                                {day} <span className="text-xs text-slate-400 ml-1">({['日','一','二','三','四','五','六'][dObj.getDay()]})</span>
+                                                            </td>
+                                                            {['early', 'late', 'night'].map((shift, idx) => (
+                                                                <td key={shift} className={`border-r border-slate-200 text-center ${idx===0?'bg-blue-50/20':idx===1?'bg-red-50/20':'bg-green-50/20'}`}>
+                                                                    <div className="flex justify-center items-center h-full w-full">
+                                                                        <input 
+                                                                            type="checkbox" 
+                                                                            className="tasting-checkbox shadow-sm rounded-sm"
+                                                                            checked={!!tastingData[`${day}-${shift}`]}
+                                                                            disabled={isLocked}
+                                                                            onChange={() => toggleTasting(day, shift)}
+                                                                        />
+                                                                    </div>
+                                                                </td>
+                                                            ))}
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="bg-slate-100 p-3 border-t border-slate-900 text-center text-xs font-black text-slate-500 uppercase tracking-widest shadow-inner">
+                                        請依實際試吃/試喝情況進行勾選
                                     </div>
                                 </div>
                             </div>
